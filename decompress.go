@@ -1,6 +1,16 @@
 package main
 
-func uncompressHeader(neko *NekoData, numberOfSeq int) []byte {
+func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
+	startOffset := neko.CurrentOffset()
+
+	defer func(){
+		if r := recover(); r != nil {
+			// end of compressed data block reached, there are no more compressed files
+			// reset to status before uncompressing attempt
+			neko.Seek(startOffset)
+		}
+	}()
+
 	var uncompressed []byte
 
 	for i := 0; i < numberOfSeq; i++ {

@@ -8,13 +8,6 @@ import (
 
 type NekoDataType string
 
-const (
-	NekoDataTypeUnknown NekoDataType = "unknown"
-	NekoDataTypeUnity   NekoDataType = "unity"
-	NekoDataTypeLuac    NekoDataType = "luac"
-	NekoDataTypeJSON    NekoDataType = "json"
-)
-
 func loadNekoData(path string) (*NekoData, error) {
 	file, err := os.ReadFile(path)
 	if err != nil {
@@ -32,7 +25,7 @@ func loadNekoData(path string) (*NekoData, error) {
 type NekoData struct {
 	data            []byte
 	currentPosition int
-	dataType        NekoDataType
+	containsLuac    bool
 }
 
 func NewNekoData(data []byte) *NekoData {
@@ -41,7 +34,7 @@ func NewNekoData(data []byte) *NekoData {
 		currentPosition: 0,
 	}
 
-	neko.dataType = determineNekoDataType(neko)
+	neko.containsLuac = containsLuacFiles(neko)
 
 	neko.Reset()
 
@@ -72,8 +65,8 @@ func (neko *NekoData) Reset() {
 	neko.currentPosition = 0
 }
 
-func (neko *NekoData) DataType() NekoDataType {
-	return neko.dataType
+func (neko *NekoData) ContainsLuac() bool {
+	return neko.containsLuac
 }
 
 func (neko *NekoData) AllPatternIndices(bytePattern []byte) []int {
@@ -107,7 +100,15 @@ func (neko *NekoData) Slice(start int, end int) *NekoData {
 	return &NekoData{
 		data:            neko.data[start:end],
 		currentPosition: 0,
-		dataType:        neko.dataType,
+		containsLuac:    neko.containsLuac,
+	}
+}
+
+func (neko *NekoData) SliceFromCurrentPos() *NekoData {
+	return &NekoData{
+		data:            neko.data[neko.currentPosition:],
+		currentPosition: 0,
+		containsLuac:    neko.containsLuac,
 	}
 }
 
@@ -119,20 +120,8 @@ func (neko *NekoData) RemainingBytes() int {
 	return len(neko.data) - neko.currentPosition
 }
 
-func determineNekoDataType(nd *NekoData) NekoDataType {
-	header := uncompressHeader(nd, 1)
+func containsLuacFiles(nd *NekoData) bool {
+	header := tryUncompressHeader(nd, 1)
 
-	if len(header) >= 5 && bytes.Compare(header[:5], luacFileHeader) == 0 {
-		return NekoDataTypeLuac
-	}
-
-	if len(header) >= 7 && bytes.Compare(header[:7], unityFileHeader) == 0 {
-		return NekoDataTypeUnity
-	}
-
-	if len(header) >= 1 && header[0] == '{' {
-		return NekoDataTypeJSON
-	}
-
-	return NekoDataTypeUnknown
+	return len(header) >= 5 && bytes.Compare(header[:5], luacFileHeader) == 0
 }

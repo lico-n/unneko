@@ -8,8 +8,9 @@ import (
 )
 
 type extractedFile struct {
-	data     []byte
-	filePath string
+	data          []byte
+	filePath      string
+	fileExtension string
 }
 
 func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader bool) error {
@@ -20,15 +21,10 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 
 	var extractedFiles []*extractedFile
 
-	switch neko.dataType {
-	case NekoDataTypeLuac:
+	if neko.ContainsLuac() {
 		extractedFiles, err = extractLuacFiles(neko, keepOriginalLuacHeader)
-	case NekoDataTypeUnity:
-		extractedFiles, err = extractUnityFiles(neko)
-	case NekoDataTypeJSON:
-		extractedFiles, err = extractJSONFiles(neko)
-	default:
-		return fmt.Errorf("unhandled neko data type %s", neko.dataType)
+	} else {
+		extractedFiles, err = extractFiles(neko)
 	}
 
 	if err != nil {
@@ -48,11 +44,59 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 	return nil
 }
 
+func nextFileIsJSON(neko *NekoData) bool {
+	headerBytes := tryUncompressHeader(neko, 1)
+	neko.Reset()
+
+	if len(headerBytes) == 0 {
+		return false
+	}
+
+	return headerBytes[0] == '{'
+}
+
+func extractFiles(neko *NekoData) ([]*extractedFile, error) {
+	var extracted []*extractedFile
+
+	for !neko.FullyRead() {
+		if nextFileIsUnityFile(neko) {
+			fileSize := readUnityFileSize(neko)
+
+			uncompressed := uncompressNeko(neko, newMaxUncompressedSizeCompleteCond(int(fileSize)))
+			extracted = append(extracted, &extractedFile{
+				data:          uncompressed,
+				fileExtension: ".assetbundle",
+			})
+
+			neko = neko.SliceFromCurrentPos()
+			continue
+		}
+
+		if nextFileIsJSON(neko) {
+			uncompressed := uncompressNeko(neko, newJSONObjectCompleteCond())
+			extracted = append(extracted, &extractedFile{
+				data: uncompressed,
+				fileExtension: ".json",
+			})
+			neko = neko.SliceFromCurrentPos()
+			continue
+		}
+
+		if bytes := tryUncompressHeader(neko, 1); len(bytes) > 0 {
+			fmt.Printf("stopped processing but there might be more data with file header %s\n", string(bytes))
+		}
+
+		break
+	}
+
+	return extracted, nil
+}
+
 func saveExtractedFile(outputPath string, neko *NekoData, file *extractedFile, fileIndex int) error {
 
 	filePath := file.filePath
 	if filePath == "" {
-		filePath = fmt.Sprintf("%d%s", fileIndex, getFileExtensionForNekoData(neko))
+		filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
 	}
 
 	outputFilePath := filepath.Join(outputPath, filePath)
@@ -67,19 +111,6 @@ func saveExtractedFile(outputPath string, neko *NekoData, file *extractedFile, f
 	}
 
 	return nil
-}
-
-func getFileExtensionForNekoData(neko *NekoData) string {
-	switch neko.DataType() {
-	case NekoDataTypeLuac:
-		return ".luac"
-	case NekoDataTypeUnity:
-		return ".assetbundle"
-	case NekoDataTypeJSON:
-		return ".json"
-	}
-
-	return ""
 }
 
 func getNekoDataBaseFileName(inputPath string) string {

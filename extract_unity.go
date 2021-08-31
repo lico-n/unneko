@@ -4,29 +4,8 @@ import (
 	"encoding/binary"
 )
 
-var (
-	unityFileHeader = []byte("UnityFS")
-)
-
-func extractUnityFiles(neko *NekoData) ([]*extractedFile, error) {
-	var extracted []*extractedFile
-
-	for hasAnotherUnityFile(neko) {
-		fileSize := readUnityFileSize(neko)
-		uncompressed := uncompressNeko(neko, newMaxUncompressedSizeCompleteCond(int(fileSize)))
-		extracted = append(extracted, &extractedFile{data: uncompressed})
-
-		currentNekoOffset := neko.CurrentOffset()
-		remainingNekoBytes := neko.RemainingBytes()
-
-		neko = neko.Slice(currentNekoOffset, remainingNekoBytes)
-	}
-
-	return extracted, nil
-}
-
 func readUnityFileSize(neko *NekoData) uint64 {
-	headerBytes := uncompressHeader(neko, 3)
+	headerBytes := tryUncompressHeader(neko, 3)
 	neko.Reset()
 
 	fileSignature := readNullTerminatedString(headerBytes)
@@ -46,9 +25,13 @@ func readUnityFileSize(neko *NekoData) uint64 {
 	return fileSize
 }
 
-func hasAnotherUnityFile(neko *NekoData) bool {
-	headerBytes := uncompressHeader(neko, 1)
+func nextFileIsUnityFile(neko *NekoData) bool {
+	headerBytes := tryUncompressHeader(neko, 1)
 	neko.Reset()
+
+	if len(headerBytes) == 0 {
+		return false
+	}
 
 	fileSignature := readNullTerminatedString(headerBytes)
 
