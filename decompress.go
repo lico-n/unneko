@@ -1,5 +1,11 @@
 package main
 
+
+type CompleteCond interface {
+	Complete(neko *NekoData, uncompressed []byte) bool
+	InterruptBlock(neko *NekoData, uncompressedBlock []byte) bool
+}
+
 func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
 	startOffset := neko.CurrentOffset()
 

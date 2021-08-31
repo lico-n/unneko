@@ -44,17 +44,6 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 	return nil
 }
 
-func nextFileIsJSON(neko *NekoData) bool {
-	headerBytes := tryUncompressHeader(neko, 1)
-	neko.Reset()
-
-	if len(headerBytes) == 0 {
-		return false
-	}
-
-	return headerBytes[0] == '{'
-}
-
 func extractFiles(neko *NekoData) ([]*extractedFile, error) {
 	var extracted []*extractedFile
 
@@ -72,8 +61,8 @@ func extractFiles(neko *NekoData) ([]*extractedFile, error) {
 			continue
 		}
 
-		if nextFileIsJSON(neko) {
-			uncompressed := uncompressNeko(neko, newJSONObjectCompleteCond())
+		if nextFileIsJSONObject(neko) {
+			uncompressed := uncompressNeko(neko, newBracketCounterCompleteCond('{', '}'))
 			extracted = append(extracted, &extractedFile{
 				data: uncompressed,
 				fileExtension: ".json",
@@ -82,8 +71,19 @@ func extractFiles(neko *NekoData) ([]*extractedFile, error) {
 			continue
 		}
 
+		if nextFileIsJSONArray(neko) {
+			uncompressed := uncompressNeko(neko, newBracketCounterCompleteCond('[', ']'))
+			extracted = append(extracted, &extractedFile{
+				data: uncompressed,
+				fileExtension: ".json",
+			})
+			neko = neko.SliceFromCurrentPos()
+			continue
+		}
+
+
 		if bytes := tryUncompressHeader(neko, 1); len(bytes) > 0 {
-			fmt.Printf("stopped processing but there might be more data with file header %s\n", string(bytes))
+			fmt.Printf("stopped processing but there might be more data with file header\n%s\n", string(bytes))
 		}
 
 		break

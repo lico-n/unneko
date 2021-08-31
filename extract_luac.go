@@ -13,6 +13,7 @@ var (
 	}
 )
 
+
 func extractLuacFiles(bigNeko *NekoData, keepOriginalLuacHeader bool) ([]*extractedFile, error) {
 	var extracted []*extractedFile
 
@@ -107,4 +108,19 @@ func getOriginalLuaFilePath(data []byte) string {
 	filePath := string(data[filePathIndex : filePathIndex+filePathLength])
 
 	return filePath
+}
+
+
+type nekoEndCompleteCond struct{}
+
+func newNekoEndCompleteCond() *nekoEndCompleteCond {
+	return &nekoEndCompleteCond{}
+}
+
+func (c *nekoEndCompleteCond) Complete(neko *NekoData, uncompressed []byte) bool {
+	return neko.FullyRead()
+}
+
+func (c *nekoEndCompleteCond) InterruptBlock(neko *NekoData, uncompressedBlock []byte) bool {
+	return neko.FullyRead()
 }
