@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-type ExtractedFile interface {
-	Data() []byte
-	FilePath() string
+type extractedFile struct {
+	data     []byte
+	filePath string
 }
 
 func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader bool) error {
@@ -18,13 +18,15 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 		return err
 	}
 
-	var extractedFiles []ExtractedFile
+	var extractedFiles []*extractedFile
 
 	switch neko.dataType {
 	case NekoDataTypeLuac:
 		extractedFiles, err = extractLuacFiles(neko, keepOriginalLuacHeader)
 	case NekoDataTypeUnity:
 		extractedFiles, err = extractUnityFiles(neko)
+	case NekoDataTypeJSON:
+		extractedFiles, err = extractJSONFiles(neko)
 	default:
 		return fmt.Errorf("unhandled neko data type %s", neko.dataType)
 	}
@@ -46,10 +48,9 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 	return nil
 }
 
-func saveExtractedFile(outputPath string, neko *NekoData, file ExtractedFile, fileIndex int) error {
-	data := file.Data()
+func saveExtractedFile(outputPath string, neko *NekoData, file *extractedFile, fileIndex int) error {
 
-	filePath := file.FilePath()
+	filePath := file.filePath
 	if filePath == "" {
 		filePath = fmt.Sprintf("%d%s", fileIndex, getFileExtensionForNekoData(neko))
 	}
@@ -61,7 +62,7 @@ func saveExtractedFile(outputPath string, neko *NekoData, file ExtractedFile, fi
 		return fmt.Errorf("creating output dir %s: %v", outputDir, err)
 	}
 
-	if err := os.WriteFile(outputFilePath, data, os.ModePerm); err != nil {
+	if err := os.WriteFile(outputFilePath, file.data, os.ModePerm); err != nil {
 		return fmt.Errorf("saving extracted file: %v", err)
 	}
 
@@ -74,6 +75,8 @@ func getFileExtensionForNekoData(neko *NekoData) string {
 		return ".luac"
 	case NekoDataTypeUnity:
 		return ".assetbundle"
+	case NekoDataTypeJSON:
+		return ".json"
 	}
 
 	return ""

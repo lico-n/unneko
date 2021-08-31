@@ -8,25 +8,13 @@ var (
 	unityFileHeader = []byte("UnityFS")
 )
 
-type unityFile struct {
-	data []byte
-}
-
-func (f *unityFile) Data() []byte {
-	return f.data
-}
-
-func (f *unityFile) FilePath() string {
-	return ""
-}
-
-func extractUnityFiles(neko *NekoData) ([]ExtractedFile, error) {
-	var extracted []ExtractedFile
+func extractUnityFiles(neko *NekoData) ([]*extractedFile, error) {
+	var extracted []*extractedFile
 
 	for hasAnotherUnityFile(neko) {
 		fileSize := readUnityFileSize(neko)
-		uncompressed := uncompressNeko(neko, int(fileSize))
-		extracted = append(extracted, &unityFile{data: uncompressed})
+		uncompressed := uncompressNeko(neko, newMaxUncompressedSizeCompleteCond(int(fileSize)))
+		extracted = append(extracted, &extractedFile{data: uncompressed})
 
 		currentNekoOffset := neko.CurrentOffset()
 		remainingNekoBytes := neko.RemainingBytes()

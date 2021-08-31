@@ -18,16 +18,11 @@ func uncompressHeader(neko *NekoData, numberOfSeq int) []byte {
 	return uncompressed
 }
 
-func uncompressNeko(neko *NekoData, maxBytes int) []byte {
+func uncompressNeko(neko *NekoData, completeCond CompleteCond) []byte {
 	var uncompressed []byte
 
-	for !neko.FullyRead() {
-		maxByteRemaining := maxBytes - len(uncompressed)
-		if maxBytes > 0 && maxByteRemaining <= 0 {
-			break
-		}
-
-		uncompressedBlock := uncompressNekoBlock(neko, maxByteRemaining)
+	for !completeCond.Complete(neko, uncompressed) {
+		uncompressedBlock := uncompressNekoBlock(neko, completeCond)
 		uncompressed = append(uncompressed, uncompressedBlock...)
 
 	}
@@ -35,7 +30,7 @@ func uncompressNeko(neko *NekoData, maxBytes int) []byte {
 	return uncompressed
 }
 
-func uncompressNekoBlock(neko *NekoData, maxBytes int) []byte {
+func uncompressNekoBlock(neko *NekoData, completeCond CompleteCond) []byte {
 	var uncompressed []byte
 
 	for !neko.FullyRead() {
@@ -45,11 +40,7 @@ func uncompressNekoBlock(neko *NekoData, maxBytes int) []byte {
 		literals := neko.ReadBytes(token.nrOfLiterals)
 		uncompressed = append(uncompressed, literals...)
 
-		if len(uncompressed) == 0x8000 || neko.FullyRead() {
-			break
-		}
-
-		if maxBytes > 0 && len(uncompressed) >= maxBytes {
+		if len(uncompressed) == 0x8000 || completeCond.InterruptBlock(neko, uncompressed) {
 			break
 		}
 

@@ -13,36 +13,22 @@ var (
 	}
 )
 
-type LuacFile struct {
-	data     []byte
-	filePath string
-}
-
-func (f *LuacFile) Data() []byte {
-	return f.data
-}
-
-func (f *LuacFile) FilePath() string {
-	return f.filePath
-}
-
-func extractLuacFiles(bigNeko *NekoData, keepOriginalLuacHeader bool) ([]ExtractedFile, error) {
-	var extracted []ExtractedFile
+func extractLuacFiles(bigNeko *NekoData, keepOriginalLuacHeader bool) ([]*extractedFile, error) {
+	var extracted []*extractedFile
 
 	nekos, err := splitLuaFiles(bigNeko)
 	if err != nil {
 		return nil, fmt.Errorf("splitting lua files: %v", err)
 	}
 
-	for i, neko := range nekos {
-		fmt.Printf("starting to uncompress file (%d/%d)\n", i+1, len(nekos))
-		uncompressed := uncompressNeko(neko, 0)
+	for _, neko := range nekos {
+		uncompressed := uncompressNeko(neko, newNekoEndCompleteCond())
 
 		if !keepOriginalLuacHeader {
 			uncompressed = fixUncompressedLuacFileHeader(uncompressed)
 		}
 
-		extracted = append(extracted, &LuacFile{
+		extracted = append(extracted, &extractedFile{
 			data:     uncompressed,
 			filePath: getOriginalLuaFilePath(uncompressed),
 		})

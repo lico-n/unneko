@@ -12,6 +12,7 @@ const (
 	NekoDataTypeUnknown NekoDataType = "unknown"
 	NekoDataTypeUnity   NekoDataType = "unity"
 	NekoDataTypeLuac    NekoDataType = "luac"
+	NekoDataTypeJSON    NekoDataType = "json"
 )
 
 func loadNekoData(path string) (*NekoData, error) {
@@ -127,6 +128,10 @@ func determineNekoDataType(nd *NekoData) NekoDataType {
 
 	if len(header) >= 7 && bytes.Compare(header[:7], unityFileHeader) == 0 {
 		return NekoDataTypeUnity
+	}
+
+	if len(header) >= 1 && header[0] == '{' {
+		return NekoDataTypeJSON
 	}
 
 	return NekoDataTypeUnknown
