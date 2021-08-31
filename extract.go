@@ -27,6 +27,8 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 		extractedFiles, err = extractFiles(neko)
 	}
 
+	restoreFileNames(extractedFiles)
+
 	if err != nil {
 		return err
 	}
