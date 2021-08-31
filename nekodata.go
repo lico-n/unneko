@@ -31,12 +31,10 @@ type NekoData struct {
 func NewNekoData(data []byte) *NekoData {
 	neko := &NekoData{
 		data:            data,
-		currentPosition: 0,
 	}
 
 	neko.containsLuac = containsLuacFiles(neko)
-
-	neko.Reset()
+	neko.currentPosition = 0
 
 	return neko
 }
@@ -59,10 +57,6 @@ func (neko *NekoData) ReadByte() byte {
 	neko.currentPosition++
 
 	return readByte
-}
-
-func (neko *NekoData) Reset() {
-	neko.currentPosition = 0
 }
 
 func (neko *NekoData) ContainsLuac() bool {

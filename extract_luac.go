@@ -13,13 +13,16 @@ var (
 	}
 )
 
-
 func extractLuacFiles(bigNeko *NekoData, keepOriginalLuacHeader bool) ([]*extractedFile, error) {
 	var extracted []*extractedFile
 
-	nekos, err := splitLuaFiles(bigNeko)
+	nekos, checksumFile, err := splitLuaFiles(bigNeko)
 	if err != nil {
 		return nil, fmt.Errorf("splitting lua files: %v", err)
+	}
+
+	if checksumFile != nil {
+		extracted = append(extracted, checksumFile)
 	}
 
 	for _, neko := range nekos {
@@ -35,11 +38,15 @@ func extractLuacFiles(bigNeko *NekoData, keepOriginalLuacHeader bool) ([]*extrac
 		})
 	}
 
+
+
 	return extracted, nil
 }
 
-func splitLuaFiles(neko *NekoData) ([]*NekoData, error) {
+
+func splitLuaFiles(neko *NekoData) ([]*NekoData, *extractedFile, error) {
 	var files []*NekoData
+	var checksumFile *extractedFile
 
 	headerIndices := neko.AllPatternIndices(luacFileHeader)
 	possibleFooterIndices := neko.AllPatternIndices(luacFileFooter)
@@ -62,7 +69,7 @@ func splitLuaFiles(neko *NekoData) ([]*NekoData, error) {
 		nextFooterArrIndex++
 
 		if footerIndexCandidate > nextHeaderIndex {
-			return nil, fmt.Errorf("missing footer for luac file starting at index %08X", previousEnd)
+			return nil, nil, fmt.Errorf("missing footer for luac file starting at index %08X", previousEnd)
 		}
 
 		for {
@@ -74,14 +81,25 @@ func splitLuaFiles(neko *NekoData) ([]*NekoData, error) {
 			nextFooterArrIndex++
 		}
 
+		neko.Seek(previousEnd)
+		if nextFileIsJSONObject(neko) {
+			uncompressed := uncompressNeko(neko, newBracketCounterCompleteCond('{', '}'))
+			checksumFile =  &extractedFile{
+				data: uncompressed,
+				fileExtension: ".json",
+			}
+			previousEnd = neko.CurrentOffset()
+		}
+
 		nextEnd := footerIndexCandidate + len(luacFileFooter)
 		subNeko := neko.Slice(previousEnd, nextEnd)
 
 		files = append(files, subNeko)
+
 		previousEnd = nextEnd
 	}
 
-	return files, nil
+	return files, checksumFile, nil
 }
 
 func fixUncompressedLuacFileHeader(data []byte) []byte {
@@ -109,7 +127,6 @@ func getOriginalLuaFilePath(data []byte) string {
 
 	return filePath
 }
-
 
 type nekoEndCompleteCond struct{}
 

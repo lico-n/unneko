@@ -6,9 +6,9 @@ import (
 )
 
 type Checksum struct {
-	Adler int `json:"adler"`
-	Crc32 uint32 `json:"crc32"`
-	Size  int `json:"size"`
+	Adler32 uint   `json:"adler32"`
+	Crc32   uint32 `json:"crc32"`
+	Size    int    `json:"size"`
 }
 
 type ChecksumFile struct {

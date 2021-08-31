@@ -5,8 +5,12 @@ import (
 )
 
 func readUnityFileSize(neko *NekoData) uint64 {
+	startOffset := neko.CurrentOffset()
+	defer func() {
+		neko.Seek(startOffset)
+	}()
+
 	headerBytes := tryUncompressHeader(neko, 3)
-	neko.Reset()
 
 	fileSignature := readNullTerminatedString(headerBytes)
 	currentHeaderOffset := len(fileSignature) + 1
@@ -26,8 +30,12 @@ func readUnityFileSize(neko *NekoData) uint64 {
 }
 
 func nextFileIsUnityFile(neko *NekoData) bool {
+	startOffset := neko.CurrentOffset()
+	defer func() {
+		neko.Seek(startOffset)
+	}()
+
 	headerBytes := tryUncompressHeader(neko, 1)
-	neko.Reset()
 
 	if len(headerBytes) == 0 {
 		return false

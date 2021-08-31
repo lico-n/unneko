@@ -2,8 +2,12 @@ package main
 
 
 func nextFileIsJSONObject(neko *NekoData) bool {
+	startOffset := neko.CurrentOffset()
+	defer func() {
+		neko.Seek(startOffset)
+	}()
+
 	headerBytes := tryUncompressHeader(neko, 1)
-	neko.Reset()
 
 	if len(headerBytes) == 0 {
 		return false
@@ -14,8 +18,12 @@ func nextFileIsJSONObject(neko *NekoData) bool {
 
 
 func nextFileIsJSONArray(neko *NekoData) bool {
+	startOffset := neko.CurrentOffset()
+	defer func() {
+		neko.Seek(startOffset)
+	}()
+
 	headerBytes := tryUncompressHeader(neko, 1)
-	neko.Reset()
 
 	if len(headerBytes) == 0 {
 		return false
