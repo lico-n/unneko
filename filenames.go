@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"hash/crc32"
 )
 
@@ -12,7 +13,7 @@ type Checksum struct {
 }
 
 type ChecksumFile struct {
-	Files map[string]Checksum `json:"files"`
+	Files         map[string]Checksum `json:"files"`
 	ExtractedFile *extractedFile
 }
 
@@ -20,26 +21,26 @@ func restoreFileNames(extractedChan chan *extractedFile) chan *extractedFile {
 	var checksumFile *ChecksumFile
 	var buffer []*extractedFile
 
-	resultCh := make(chan *extractedFile,1)
+	resultCh := make(chan *extractedFile, 1)
 	go func() {
 		defer close(resultCh)
 
+		fileIndex := 0
+
 		for file := range extractedChan {
+			fileIndex++
 			// already found checksum file, restore filename and pass it along
 			if checksumFile != nil {
-				fileName := findFileName(checksumFile, file)
-				if fileName != "" {
-					file.filePath = fileName
-				}
+				file.filePath = restoreFileName(checksumFile, file, fileIndex)
 				resultCh <- file
 				continue
 			}
-
 
 			checksumFile = isChecksumFile(file)
 
 			// no checksum file write it into buffer, until we find it
 			if checksumFile == nil {
+				file.filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
 				buffer = append(buffer, file)
 				continue
 			}
@@ -47,10 +48,7 @@ func restoreFileNames(extractedChan chan *extractedFile) chan *extractedFile {
 			// found checksum file, process all files in buffer and continue
 			resultCh <- checksumFile.ExtractedFile
 			for _, v := range buffer {
-				fileName := findFileName(checksumFile, v)
-				if fileName != "" {
-					v.filePath = fileName
-				}
+				v.filePath = restoreFileName(checksumFile, v, fileIndex)
 				resultCh <- v
 			}
 
@@ -88,7 +86,7 @@ func isChecksumFile(file *extractedFile) *ChecksumFile {
 	}
 }
 
-func findFileName(checksumFile *ChecksumFile, file *extractedFile) string {
+func restoreFileName(checksumFile *ChecksumFile, file *extractedFile, fileIndex int) string {
 	checksum := crc32.ChecksumIEEE(file.data)
 
 	for fileName, checksums := range checksumFile.Files {
@@ -97,5 +95,5 @@ func findFileName(checksumFile *ChecksumFile, file *extractedFile) string {
 		}
 	}
 
-	return ""
+	return fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
 }

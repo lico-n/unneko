@@ -65,13 +65,6 @@ func (neko *NekoData) CurrentOffset() int {
 	return neko.currentPosition
 }
 
-func (neko *NekoData) Slice(start int, end int) *NekoData {
-	return &NekoData{
-		data:            neko.data[start:end],
-		currentPosition: 0,
-	}
-}
-
 func (neko *NekoData) SliceFromCurrentPos() *NekoData {
 	return &NekoData{
 		data:            neko.data[neko.currentPosition:],
@@ -81,8 +74,4 @@ func (neko *NekoData) SliceFromCurrentPos() *NekoData {
 
 func (neko *NekoData) FullyRead() bool {
 	return len(neko.data) <= neko.currentPosition
-}
-
-func (neko *NekoData) RemainingBytes() int {
-	return len(neko.data) - neko.currentPosition
 }

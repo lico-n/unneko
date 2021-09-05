@@ -7,10 +7,7 @@ import (
 
 func extractUnityFile(neko *NekoData) *extractedFile {
 	fileSize := readUnityFileSize(neko)
-
 	uncompressed := uncompressNeko(neko, newMaxUncompressedSizeCompleteCond(int(fileSize)))
-
-	neko = neko.SliceFromCurrentPos()
 
 	return &extractedFile{
 		data:          uncompressed,

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type extractedFile struct {
@@ -27,10 +28,20 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 	nekoBaseFileName := getNekoDataBaseFileName(inputPath)
 	outputPath = filepath.Join(outputPath, nekoBaseFileName)
 
-	return saveExtractedFiles(outputPath, extractedChan)
+	numOfSaveWorker := 16
+
+	wg := &sync.WaitGroup{}
+	wg.Add(numOfSaveWorker)
+
+	for i := 0; i < numOfSaveWorker; i++ {
+		startFileSavingWorker(wg, outputPath, extractedChan)
+	}
+
+	wg.Wait()
+	return nil
 }
 
-func extractFiles(neko *NekoData, keepOriginalLuacHeader bool) (chan *extractedFile) {
+func extractFiles(neko *NekoData, keepOriginalLuacHeader bool) chan *extractedFile {
 	extractedChan := make(chan *extractedFile, 1)
 
 	go func() {
@@ -82,31 +93,22 @@ func extractFiles(neko *NekoData, keepOriginalLuacHeader bool) (chan *extractedF
 	return extractedChan
 }
 
+func startFileSavingWorker(wg *sync.WaitGroup, outputPath string, extractedChan chan *extractedFile) {
+	go func() {
+		defer wg.Done()
+		for file := range extractedChan {
+			outputFilePath := filepath.Join(outputPath, file.filePath)
 
+			outputDir := filepath.Dir(outputFilePath)
+			if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
+				panic(fmt.Errorf("creating output dir %s: %v", outputDir, err))
+			}
 
-func saveExtractedFiles(outputPath string, extractedChan chan *extractedFile) error {
-	fileIndex := 0
-	for file := range extractedChan {
-		fileIndex++
-
-		filePath := file.filePath
-		if filePath == "" {
-			filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
+			if err := os.WriteFile(outputFilePath, file.data, os.ModePerm); err != nil {
+				panic(fmt.Errorf("saving extracted file: %v", err))
+			}
 		}
-
-		outputFilePath := filepath.Join(outputPath, filePath)
-
-		outputDir := filepath.Dir(outputFilePath)
-		if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
-			return fmt.Errorf("creating output dir %s: %v", outputDir, err)
-		}
-
-		if err := os.WriteFile(outputFilePath, file.data, os.ModePerm); err != nil {
-			return fmt.Errorf("saving extracted file: %v", err)
-		}
-	}
-
-	return nil
+	}()
 }
 
 func getNekoDataBaseFileName(inputPath string) string {
