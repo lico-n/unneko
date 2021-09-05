@@ -6,53 +6,86 @@ import (
 )
 
 type Checksum struct {
-	Adler32 uint   `json:"adler32"`
+	Adler32 uint32 `json:"adler32"`
 	Crc32   uint32 `json:"crc32"`
 	Size    int    `json:"size"`
 }
 
 type ChecksumFile struct {
 	Files map[string]Checksum `json:"files"`
+	ExtractedFile *extractedFile
 }
 
-func restoreFileNames(files []*extractedFile) {
-	checksumFile := findChecksumFile(files)
-	if checksumFile == nil {
-		return
-	}
+func restoreFileNames(extractedChan chan *extractedFile) chan *extractedFile {
+	var checksumFile *ChecksumFile
+	var buffer []*extractedFile
 
-	for _, v := range files {
-		fileName := findFileName(checksumFile, v)
-		if fileName != "" {
-			v.filePath = fileName
+	resultCh := make(chan *extractedFile,1)
+	go func() {
+		defer close(resultCh)
+
+		for file := range extractedChan {
+			// already found checksum file, restore filename and pass it along
+			if checksumFile != nil {
+				fileName := findFileName(checksumFile, file)
+				if fileName != "" {
+					file.filePath = fileName
+				}
+				resultCh <- file
+				continue
+			}
+
+
+			checksumFile = isChecksumFile(file)
+
+			// no checksum file write it into buffer, until we find it
+			if checksumFile == nil {
+				buffer = append(buffer, file)
+				continue
+			}
+
+			// found checksum file, process all files in buffer and continue
+			resultCh <- checksumFile.ExtractedFile
+			for _, v := range buffer {
+				fileName := findFileName(checksumFile, v)
+				if fileName != "" {
+					v.filePath = fileName
+				}
+				resultCh <- v
+			}
+
+			buffer = nil
 		}
 
-	}
+		for _, v := range buffer {
+			resultCh <- v
+		}
+	}()
 
+	return resultCh
 }
 
-func findChecksumFile(files []*extractedFile) *ChecksumFile {
-	for _, v := range files {
-		if v.fileExtension != ".json" {
-			continue
-		}
-
-		var integrityFile *ChecksumFile
-
-		if err := json.Unmarshal(v.data, &integrityFile); err != nil {
-			continue
-		}
-
-		if len(integrityFile.Files) == 0 {
-			continue
-		}
-
-		v.filePath = "checksum.json"
-
-		return integrityFile
+func isChecksumFile(file *extractedFile) *ChecksumFile {
+	if file.fileExtension != ".json" {
+		return nil
 	}
 
-	return nil
+	var checksumFile *ChecksumFile
+
+	if err := json.Unmarshal(file.data, &checksumFile); err != nil {
+		return nil
+	}
+
+	if len(checksumFile.Files) == 0 {
+		return nil
+	}
+
+	file.filePath = "checksum.json"
+
+	return &ChecksumFile{
+		Files:         checksumFile.Files,
+		ExtractedFile: file,
+	}
 }
 
 func findFileName(checksumFile *ChecksumFile, file *extractedFile) string {

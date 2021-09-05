@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,96 +20,90 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 		return err
 	}
 
-	var extractedFiles []*extractedFile
+	extractedChan := extractFiles(neko, keepOriginalLuacHeader)
 
-	if neko.ContainsLuac() {
-		extractedFiles, err = extractLuacFiles(neko, keepOriginalLuacHeader)
-	} else {
-		extractedFiles, err = extractFiles(neko)
-	}
-
-	restoreFileNames(extractedFiles)
-
-	if err != nil {
-		return err
-	}
+	extractedChan = restoreFileNames(extractedChan)
 
 	nekoBaseFileName := getNekoDataBaseFileName(inputPath)
-
 	outputPath = filepath.Join(outputPath, nekoBaseFileName)
 
-	for i, v := range extractedFiles {
-		if err := saveExtractedFile(outputPath, v, i); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return saveExtractedFiles(outputPath, extractedChan)
 }
 
-func extractFiles(neko *NekoData) ([]*extractedFile, error) {
-	var extracted []*extractedFile
+func extractFiles(neko *NekoData, keepOriginalLuacHeader bool) (chan *extractedFile) {
+	extractedChan := make(chan *extractedFile, 1)
 
-	for !neko.FullyRead() {
-		if nextFileIsUnityFile(neko) {
-			fileSize := readUnityFileSize(neko)
+	go func() {
+		defer close(extractedChan)
 
-			uncompressed := uncompressNeko(neko, newMaxUncompressedSizeCompleteCond(int(fileSize)))
-			extracted = append(extracted, &extractedFile{
-				data:          uncompressed,
-				fileExtension: ".assetbundle",
-			})
+		for !neko.FullyRead() {
+			startOffset := neko.CurrentOffset()
 
-			neko = neko.SliceFromCurrentPos()
-			continue
+			headerBytes := tryUncompressHeader(neko, 1)
+			if len(headerBytes) == 0 {
+				break
+			}
+
+			neko.Seek(startOffset)
+
+			if len(headerBytes) >= 7 && string(headerBytes[:7]) == "UnityFS" {
+				file := extractUnityFile(neko)
+				extractedChan <- file
+				neko = neko.SliceFromCurrentPos()
+				continue
+			}
+
+			if headerBytes[0] == '{' {
+				file := extractJSONObjectFile(neko)
+				extractedChan <- file
+				neko = neko.SliceFromCurrentPos()
+				continue
+			}
+
+			if headerBytes[0] == '[' {
+				file := extractJSONArrayFile(neko)
+				extractedChan <- file
+				neko = neko.SliceFromCurrentPos()
+				continue
+			}
+
+			if len(headerBytes) >= 5 && bytes.Compare(headerBytes[:5], luacFileHeader) == 0 {
+				file := extractLuacFile(neko, keepOriginalLuacHeader)
+				extractedChan <- file
+				neko = neko.SliceFromCurrentPos()
+				continue
+			}
+
+			fmt.Printf("stopped processing but there might be more data with file header\n%s\n", string(headerBytes))
+			break
 		}
+	}()
 
-		if nextFileIsJSONObject(neko) {
-			uncompressed := uncompressNeko(neko, newBracketCounterCompleteCond('{', '}'))
-			extracted = append(extracted, &extractedFile{
-				data:          uncompressed,
-				fileExtension: ".json",
-			})
-			neko = neko.SliceFromCurrentPos()
-			continue
-		}
-
-		if nextFileIsJSONArray(neko) {
-			uncompressed := uncompressNeko(neko, newBracketCounterCompleteCond('[', ']'))
-			extracted = append(extracted, &extractedFile{
-				data:          uncompressed,
-				fileExtension: ".json",
-			})
-			neko = neko.SliceFromCurrentPos()
-			continue
-		}
-
-		if bytes := tryUncompressHeader(neko, 1); len(bytes) > 0 {
-			fmt.Printf("stopped processing but there might be more data with file header\n%s\n", string(bytes))
-		}
-
-		break
-	}
-
-	return extracted, nil
+	return extractedChan
 }
 
-func saveExtractedFile(outputPath string, file *extractedFile, fileIndex int) error {
 
-	filePath := file.filePath
-	if filePath == "" {
-		filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
-	}
 
-	outputFilePath := filepath.Join(outputPath, filePath)
+func saveExtractedFiles(outputPath string, extractedChan chan *extractedFile) error {
+	fileIndex := 0
+	for file := range extractedChan {
+		fileIndex++
 
-	outputDir := filepath.Dir(outputFilePath)
-	if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
-		return fmt.Errorf("creating output dir %s: %v", outputDir, err)
-	}
+		filePath := file.filePath
+		if filePath == "" {
+			filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
+		}
 
-	if err := os.WriteFile(outputFilePath, file.data, os.ModePerm); err != nil {
-		return fmt.Errorf("saving extracted file: %v", err)
+		outputFilePath := filepath.Join(outputPath, filePath)
+
+		outputDir := filepath.Dir(outputFilePath)
+		if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
+			return fmt.Errorf("creating output dir %s: %v", outputDir, err)
+		}
+
+		if err := os.WriteFile(outputFilePath, file.data, os.ModePerm); err != nil {
+			return fmt.Errorf("saving extracted file: %v", err)
+		}
 	}
 
 	return nil

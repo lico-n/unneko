@@ -4,6 +4,21 @@ import (
 	"encoding/binary"
 )
 
+
+func extractUnityFile(neko *NekoData) *extractedFile {
+	fileSize := readUnityFileSize(neko)
+
+	uncompressed := uncompressNeko(neko, newMaxUncompressedSizeCompleteCond(int(fileSize)))
+
+	neko = neko.SliceFromCurrentPos()
+
+	return &extractedFile{
+		data:          uncompressed,
+		fileExtension: ".assetbundle",
+	}
+}
+
+
 func readUnityFileSize(neko *NekoData) uint64 {
 	startOffset := neko.CurrentOffset()
 	defer func() {
@@ -27,23 +42,6 @@ func readUnityFileSize(neko *NekoData) uint64 {
 	fileSize := binary.BigEndian.Uint64(fileSizeBytes)
 
 	return fileSize
-}
-
-func nextFileIsUnityFile(neko *NekoData) bool {
-	startOffset := neko.CurrentOffset()
-	defer func() {
-		neko.Seek(startOffset)
-	}()
-
-	headerBytes := tryUncompressHeader(neko, 1)
-
-	if len(headerBytes) == 0 {
-		return false
-	}
-
-	fileSignature := readNullTerminatedString(headerBytes)
-
-	return fileSignature == "UnityFS"
 }
 
 func readNullTerminatedString(data []byte) string {

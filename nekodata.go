@@ -6,7 +6,6 @@ import (
 	"os"
 )
 
-type NekoDataType string
 
 func loadNekoData(path string) (*NekoData, error) {
 	file, err := os.ReadFile(path)
@@ -25,18 +24,13 @@ func loadNekoData(path string) (*NekoData, error) {
 type NekoData struct {
 	data            []byte
 	currentPosition int
-	containsLuac    bool
 }
 
 func NewNekoData(data []byte) *NekoData {
-	neko := &NekoData{
+	return &NekoData{
 		data:            data,
+		currentPosition: 0,
 	}
-
-	neko.containsLuac = containsLuacFiles(neko)
-	neko.currentPosition = 0
-
-	return neko
 }
 
 func (neko *NekoData) ReadBytes(size int) []byte {
@@ -59,27 +53,8 @@ func (neko *NekoData) ReadByte() byte {
 	return readByte
 }
 
-func (neko *NekoData) ContainsLuac() bool {
-	return neko.containsLuac
-}
-
-func (neko *NekoData) AllPatternIndices(bytePattern []byte) []int {
-	var indices []int
-	pos := 0
-
-	for {
-		relativeIndex := bytes.Index(neko.data[pos:], bytePattern)
-		if relativeIndex == -1 {
-			break
-		}
-
-		absoluteIndex := pos + relativeIndex
-
-		indices = append(indices, absoluteIndex)
-		pos = absoluteIndex + 1
-	}
-
-	return indices
+func (neko *NekoData) StillContains(bytePattern []byte) bool {
+	return bytes.Index(neko.data[neko.currentPosition:], bytePattern) != -1
 }
 
 func (neko *NekoData) Seek(position int) {
@@ -94,7 +69,6 @@ func (neko *NekoData) Slice(start int, end int) *NekoData {
 	return &NekoData{
 		data:            neko.data[start:end],
 		currentPosition: 0,
-		containsLuac:    neko.containsLuac,
 	}
 }
 
@@ -102,7 +76,6 @@ func (neko *NekoData) SliceFromCurrentPos() *NekoData {
 	return &NekoData{
 		data:            neko.data[neko.currentPosition:],
 		currentPosition: 0,
-		containsLuac:    neko.containsLuac,
 	}
 }
 
@@ -112,10 +85,4 @@ func (neko *NekoData) FullyRead() bool {
 
 func (neko *NekoData) RemainingBytes() int {
 	return len(neko.data) - neko.currentPosition
-}
-
-func containsLuacFiles(nd *NekoData) bool {
-	header := tryUncompressHeader(nd, 1)
-
-	return len(header) >= 5 && bytes.Compare(header[:5], luacFileHeader) == 0
 }

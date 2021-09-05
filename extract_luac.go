@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"bytes"
 )
 
 var (
@@ -13,93 +13,16 @@ var (
 	}
 )
 
-func extractLuacFiles(bigNeko *NekoData, keepOriginalLuacHeader bool) ([]*extractedFile, error) {
-	var extracted []*extractedFile
-
-	nekos, checksumFile, err := splitLuaFiles(bigNeko)
-	if err != nil {
-		return nil, fmt.Errorf("splitting lua files: %v", err)
+func extractLuacFile(neko *NekoData,  keepOriginalLuacHeader bool) *extractedFile {
+	uncompressed := uncompressNeko(neko, newLuacEndCompleteCond())
+	if !keepOriginalLuacHeader {
+		uncompressed = fixUncompressedLuacFileHeader(uncompressed)
 	}
 
-	if checksumFile != nil {
-		extracted = append(extracted, checksumFile)
+	return &extractedFile{
+		data:     uncompressed,
+		filePath: getOriginalLuaFilePath(uncompressed),
 	}
-
-	for _, neko := range nekos {
-		uncompressed := uncompressNeko(neko, newNekoEndCompleteCond())
-
-		if !keepOriginalLuacHeader {
-			uncompressed = fixUncompressedLuacFileHeader(uncompressed)
-		}
-
-		extracted = append(extracted, &extractedFile{
-			data:     uncompressed,
-			filePath: getOriginalLuaFilePath(uncompressed),
-		})
-	}
-
-
-
-	return extracted, nil
-}
-
-
-func splitLuaFiles(neko *NekoData) ([]*NekoData, *extractedFile, error) {
-	var files []*NekoData
-	var checksumFile *extractedFile
-
-	headerIndices := neko.AllPatternIndices(luacFileHeader)
-	possibleFooterIndices := neko.AllPatternIndices(luacFileFooter)
-
-	previousEnd := 0
-
-	nextFooterArrIndex := 0
-
-	for i := 0; i < len(headerIndices); i++ {
-		if i+1 == len(headerIndices) {
-			lastFooterIndex := possibleFooterIndices[len(possibleFooterIndices)-1]
-			subNeko := neko.Slice(previousEnd, lastFooterIndex+len(luacFileFooter))
-			files = append(files, subNeko)
-			break
-		}
-
-		nextHeaderIndex := headerIndices[i+1]
-
-		footerIndexCandidate := possibleFooterIndices[nextFooterArrIndex]
-		nextFooterArrIndex++
-
-		if footerIndexCandidate > nextHeaderIndex {
-			return nil, nil, fmt.Errorf("missing footer for luac file starting at index %08X", previousEnd)
-		}
-
-		for {
-			if possibleFooterIndices[nextFooterArrIndex] > nextHeaderIndex {
-				break
-			}
-
-			footerIndexCandidate = possibleFooterIndices[nextFooterArrIndex]
-			nextFooterArrIndex++
-		}
-
-		neko.Seek(previousEnd)
-		if nextFileIsJSONObject(neko) {
-			uncompressed := uncompressNeko(neko, newBracketCounterCompleteCond('{', '}'))
-			checksumFile =  &extractedFile{
-				data: uncompressed,
-				fileExtension: ".json",
-			}
-			previousEnd = neko.CurrentOffset()
-		}
-
-		nextEnd := footerIndexCandidate + len(luacFileFooter)
-		subNeko := neko.Slice(previousEnd, nextEnd)
-
-		files = append(files, subNeko)
-
-		previousEnd = nextEnd
-	}
-
-	return files, checksumFile, nil
 }
 
 func fixUncompressedLuacFileHeader(data []byte) []byte {
@@ -128,16 +51,55 @@ func getOriginalLuaFilePath(data []byte) string {
 	return filePath
 }
 
-type nekoEndCompleteCond struct{}
+type luacEndCompleteCond struct{}
 
-func newNekoEndCompleteCond() *nekoEndCompleteCond {
-	return &nekoEndCompleteCond{}
+func newLuacEndCompleteCond() *luacEndCompleteCond {
+	return &luacEndCompleteCond{}
 }
 
-func (c *nekoEndCompleteCond) Complete(neko *NekoData, uncompressed []byte) bool {
-	return neko.FullyRead()
+func (c *luacEndCompleteCond) Complete(neko *NekoData, uncompressed []byte) bool {
+	return neko.FullyRead() || c.isEndOfFile(neko, uncompressed)
 }
 
-func (c *nekoEndCompleteCond) InterruptBlock(neko *NekoData, uncompressedBlock []byte) bool {
-	return neko.FullyRead()
+func (c *luacEndCompleteCond) InterruptBlock(neko *NekoData, uncompressedBlock []byte) bool {
+	return neko.FullyRead() || c.isEndOfFile(neko, uncompressedBlock)
 }
+
+func (c *luacEndCompleteCond) endsInFileFooter(uncompressed []byte) bool {
+	if len(uncompressed) < len(luacFileFooter) {
+		return false
+	}
+
+	lastUncompressed := uncompressed[len(uncompressed)-len(luacFileFooter):]
+
+	return bytes.Compare(lastUncompressed, luacFileFooter) == 0
+}
+
+func (c *luacEndCompleteCond) isEndOfFile(neko *NekoData, uncompressed []byte) bool {
+	if !c.endsInFileFooter(uncompressed) {
+		return false
+	}
+
+	startOffset := neko.CurrentOffset()
+	nextHeader := tryUncompressHeader(neko, 1)
+	neko.Seek(startOffset)
+
+	// is followed by the next luac file
+	if len(nextHeader) >= 5 && bytes.Compare(nextHeader[:5], luacFileHeader) == 0 {
+		return true
+	}
+
+	// is followed by the checksum file
+	if len(nextHeader) >= 1 && nextHeader[0] == '{' {
+		return true
+	}
+
+	// check if this is the last file ending
+	if neko.StillContains(luacFileFooter) {
+		return false
+	}
+
+	return true
+}
+
+
