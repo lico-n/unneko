@@ -22,6 +22,7 @@ func extractLuacFile(neko *NekoData,  keepOriginalLuacHeader bool) *extractedFil
 	return &extractedFile{
 		data:     uncompressed,
 		filePath: getOriginalLuaFilePath(uncompressed),
+		fileExtension: ".luac",
 	}
 }
 

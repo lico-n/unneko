@@ -40,7 +40,9 @@ func restoreFileNames(extractedChan chan *extractedFile) chan *extractedFile {
 
 			// no checksum file write it into buffer, until we find it
 			if checksumFile == nil {
-				file.filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
+				if file.filePath == "" {
+					file.filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
+				}
 				buffer = append(buffer, file)
 				continue
 			}
@@ -93,6 +95,10 @@ func restoreFileName(checksumFile *ChecksumFile, file *extractedFile, fileIndex 
 		if checksums.Crc32 == checksum && len(file.data) == checksums.Size {
 			return fileName
 		}
+	}
+
+	if file.filePath != "" {
+		return file.filePath
 	}
 
 	return fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
