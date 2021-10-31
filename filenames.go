@@ -17,6 +17,7 @@ type ChecksumFile struct {
 	ExtractedFile *extractedFile
 }
 
+
 func restoreFileNames(extractedChan chan *extractedFile) chan *extractedFile {
 	var checksumFile *ChecksumFile
 	var buffer []*extractedFile
@@ -24,8 +25,7 @@ func restoreFileNames(extractedChan chan *extractedFile) chan *extractedFile {
 	resultCh := make(chan *extractedFile, 1)
 	go func() {
 		defer close(resultCh)
-
-		fileIndex := 0
+		var fileIndex = 0
 
 		for file := range extractedChan {
 			fileIndex++
@@ -42,6 +42,7 @@ func restoreFileNames(extractedChan chan *extractedFile) chan *extractedFile {
 			if checksumFile == nil {
 				if file.filePath == "" {
 					file.filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
+					//fmt.Println(fileIndex)
 				}
 				buffer = append(buffer, file)
 				continue
@@ -93,6 +94,7 @@ func restoreFileName(checksumFile *ChecksumFile, file *extractedFile, fileIndex 
 
 	for fileName, checksums := range checksumFile.Files {
 		if checksums.Crc32 == checksum && len(file.data) == checksums.Size {
+			delete(checksumFile.Files, fileName)
 			return fileName
 		}
 	}

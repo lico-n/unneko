@@ -41,6 +41,15 @@ func (c *bracketCounterCompleteCond) InterruptBlock(neko *NekoData, uncompressed
 	return neko.FullyRead() || currentlyOpenBrackets == 0
 }
 
+func (c *bracketCounterCompleteCond) UntilError() bool {
+	return false
+}
+
+func (c *bracketCounterCompleteCond) RecordError()  {
+	// do nothing
+}
+
+
 func (c *bracketCounterCompleteCond) getBracketDelta(data []byte) int {
 	bracketDelta := 0
 
@@ -54,4 +63,8 @@ func (c *bracketCounterCompleteCond) getBracketDelta(data []byte) int {
 	}
 
 	return bracketDelta
+}
+
+func (c *bracketCounterCompleteCond) IsValidUncompress(_ []byte) bool {
+	return true
 }

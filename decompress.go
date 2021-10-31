@@ -1,9 +1,11 @@
 package main
 
-
 type CompleteCond interface {
 	Complete(neko *NekoData, uncompressed []byte) bool
 	InterruptBlock(neko *NekoData, uncompressedBlock []byte) bool
+	UntilError() bool
+	RecordError()
+	IsValidUncompress(uncompressed []byte) bool
 }
 
 func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
@@ -25,6 +27,16 @@ func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
 		literals := neko.ReadBytes(token.nrOfLiterals)
 		uncompressed = append(uncompressed, literals...)
 
+		if token.tokenByte & 0xF == 0 {
+			beforeMatchOffset := neko.CurrentOffset()
+			matchOffset := readMatchOffset(neko)
+			if len(uncompressed) - matchOffset <= 0{
+				neko.Seek(beforeMatchOffset)
+				break
+			}
+			neko.Seek(beforeMatchOffset)
+		}
+
 		matchOffset := readMatchOffset(neko)
 		extendedMatchLen := readExtendedMatchLength(token, neko)
 
@@ -40,7 +52,6 @@ func uncompressNeko(neko *NekoData, completeCond CompleteCond) []byte {
 	for !completeCond.Complete(neko, uncompressed) {
 		uncompressedBlock := uncompressNekoBlock(neko, completeCond)
 		uncompressed = append(uncompressed, uncompressedBlock...)
-
 	}
 
 	return uncompressed
@@ -48,22 +59,60 @@ func uncompressNeko(neko *NekoData, completeCond CompleteCond) []byte {
 
 func uncompressNekoBlock(neko *NekoData, completeCond CompleteCond) []byte {
 	var uncompressed []byte
+	var lastSavePointOffset int
+	var lastNumberOfMatches int
+
 
 	for !neko.FullyRead() {
-
 		token := readToken(neko)
 
 		literals := neko.ReadBytes(token.nrOfLiterals)
+		if completeCond.UntilError() {
+			if !completeCond.IsValidUncompress(literals) {
+				neko.Seek(lastSavePointOffset)
+				completeCond.RecordError()
+				uncompressed = uncompressed[:len(uncompressed)- lastNumberOfMatches]
+				break
+			}
+		}
+
 		uncompressed = append(uncompressed, literals...)
 
 		if len(uncompressed) == 0x8000 || completeCond.InterruptBlock(neko, uncompressed) {
 			break
 		}
 
-		matchOffset := readMatchOffset(neko)
-		extendedMatchLen := readExtendedMatchLength(token, neko)
+		lastSavePointOffset = neko.CurrentOffset()
 
-		uncompressed = appendMatches(uncompressed, token.nrOfMatches+extendedMatchLen, matchOffset)
+		hasErrored := false
+		func() {
+			if completeCond.UntilError() {
+				initialOffset := neko.CurrentOffset()
+				defer func() {
+					if r := recover(); r != nil {
+						neko.Seek(initialOffset)
+						hasErrored = true
+					}
+				}()
+			}
+			matchOffset := readMatchOffset(neko)
+			extendedMatchLen := readExtendedMatchLength(token, neko)
+			nrOfMatches := token.nrOfMatches+extendedMatchLen
+			uncompressed = appendMatches(uncompressed, nrOfMatches, matchOffset)
+
+			if completeCond.UntilError() {
+				newMatches := uncompressed[len(uncompressed)-1-nrOfMatches:]
+				if !completeCond.IsValidUncompress(newMatches) {
+					panic("unexpected character in uncompressed data")
+				}
+			}
+			lastNumberOfMatches = nrOfMatches
+		}()
+
+		if hasErrored {
+			completeCond.RecordError()
+			break
+		}
 	}
 
 	return uncompressed

@@ -41,15 +41,19 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 	return nil
 }
 
+var anotherFile = 0
 func extractFiles(neko *NekoData, keepOriginalLuacHeader bool) chan *extractedFile {
 	extractedChan := make(chan *extractedFile, 1)
+
+	totalOffset := 0x18
 
 	go func() {
 		defer close(extractedChan)
 
 		for !neko.FullyRead() {
-			startOffset := neko.CurrentOffset()
+			anotherFile++
 
+			startOffset := neko.CurrentOffset()
 			headerBytes := tryUncompressHeader(neko, 1)
 			if len(headerBytes) == 0 {
 				break
@@ -85,9 +89,14 @@ func extractFiles(neko *NekoData, keepOriginalLuacHeader bool) chan *extractedFi
 				continue
 			}
 
-			fmt.Printf("stopped processing but there might be more data with file header\n%s\n", string(headerBytes))
-			break
+			file := extractPlainFile(neko)
+			extractedChan <- file
+			totalOffset += neko.CurrentOffset()
+			neko = neko.SliceFromCurrentPos()
+
 		}
+
+		//fmt.Println(anotherFile)
 	}()
 
 	return extractedChan
