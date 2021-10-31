@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"hash/adler32"
 	"hash/crc32"
 )
 
@@ -14,13 +15,55 @@ type Checksum struct {
 
 type ChecksumFile struct {
 	Files         map[string]Checksum `json:"files"`
-	ExtractedFile *extractedFile
 }
 
+func (cf *ChecksumFile) Copy() *ChecksumFile {
+	m := make(map[string]Checksum, len(cf.Files))
+	for k, v := range cf.Files {
+		m[k]= v
+	}
+	return &ChecksumFile{
+		Files:         m,
+	}
+}
 
-func restoreFileNames(extractedChan chan *extractedFile) chan *extractedFile {
-	var checksumFile *ChecksumFile
-	var buffer []*extractedFile
+func findChecksumFile(neko *NekoData) *ChecksumFile {
+	checksumFileStart := []byte(`{"files":`)
+	var possibleCheckSumFileStarts []int
+	for i := neko.Index(checksumFileStart); i != -1; i = neko.Index(checksumFileStart) {
+		possibleCheckSumFileStarts = append(possibleCheckSumFileStarts, i-2)
+		possibleCheckSumFileStarts = append(possibleCheckSumFileStarts, i-1)
+		neko.Seek(i+1)
+	}
+
+	for _, fileStart := range possibleCheckSumFileStarts {
+		neko.Seek(fileStart)
+		headerBytes := tryUncompressHeader(neko, 1)
+		if len(headerBytes) == 0 {
+			continue
+		}
+
+		neko.Seek(fileStart)
+		checkSumFile := tryExtractChecksumFile(neko)
+		if checkSumFile != nil {
+			return checkSumFile
+		}
+	}
+
+	return nil
+}
+
+func tryExtractChecksumFile(neko *NekoData) *ChecksumFile {
+	defer func() {
+		if r := recover(); r != nil {
+			// do nothing
+		}
+	}()
+	file := extractJSONObjectFile(neko)
+	return isChecksumFile(file)
+}
+
+func restoreFileNames(checksumFile *ChecksumFile, extractedChan chan *extractedFile) chan *extractedFile {
 
 	resultCh := make(chan *extractedFile, 1)
 	go func() {
@@ -28,38 +71,18 @@ func restoreFileNames(extractedChan chan *extractedFile) chan *extractedFile {
 		var fileIndex = 0
 
 		for file := range extractedChan {
-			fileIndex++
-			// already found checksum file, restore filename and pass it along
 			if checksumFile != nil {
 				file.filePath = restoreFileName(checksumFile, file, fileIndex)
 				resultCh <- file
 				continue
 			}
 
-			checksumFile = isChecksumFile(file)
-
-			// no checksum file write it into buffer, until we find it
-			if checksumFile == nil {
-				if file.filePath == "" {
-					file.filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
-					//fmt.Println(fileIndex)
-				}
-				buffer = append(buffer, file)
-				continue
+			if file.filePath == "" {
+				file.filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
 			}
 
-			// found checksum file, process all files in buffer and continue
-			resultCh <- checksumFile.ExtractedFile
-			for _, v := range buffer {
-				v.filePath = restoreFileName(checksumFile, v, fileIndex)
-				resultCh <- v
-			}
+			resultCh <- file
 
-			buffer = nil
-		}
-
-		for _, v := range buffer {
-			resultCh <- v
 		}
 	}()
 
@@ -83,13 +106,22 @@ func isChecksumFile(file *extractedFile) *ChecksumFile {
 
 	file.filePath = "checksum.json"
 
+
+	c := Checksum{
+		Adler32: adler32.Checksum(file.data),
+		Crc32:   crc32.ChecksumIEEE(file.data),
+		Size: len(file.data),
+	}
+
+	checksumFile.Files[file.filePath] = c
+
 	return &ChecksumFile{
 		Files:         checksumFile.Files,
-		ExtractedFile: file,
 	}
 }
 
 func restoreFileName(checksumFile *ChecksumFile, file *extractedFile, fileIndex int) string {
+	checksumFile = checksumFile.Copy()
 	checksum := crc32.ChecksumIEEE(file.data)
 
 	for fileName, checksums := range checksumFile.Files {

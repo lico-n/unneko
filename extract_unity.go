@@ -54,7 +54,6 @@ func readNullTerminatedString(data []byte) string {
 
 type maxUncompressedSizeCompleteCond struct {
 	maxUncompressedSize int
-	alreadyUncompressed int
 }
 
 func newMaxUncompressedSizeCompleteCond(maxSize int) *maxUncompressedSizeCompleteCond {
@@ -62,22 +61,6 @@ func newMaxUncompressedSizeCompleteCond(maxSize int) *maxUncompressedSizeComplet
 }
 
 func (c *maxUncompressedSizeCompleteCond) Complete(neko *NekoData, uncompressed []byte) bool {
-	c.alreadyUncompressed = len(uncompressed)
-	return neko.FullyRead() || c.maxUncompressedSize <= c.alreadyUncompressed
+	return neko.FullyRead() || c.maxUncompressedSize <= len(uncompressed)
 }
 
-func (c *maxUncompressedSizeCompleteCond) InterruptBlock(neko *NekoData, uncompressedBlock []byte) bool {
-	return neko.FullyRead() || c.maxUncompressedSize <= c.alreadyUncompressed+len(uncompressedBlock)
-}
-
-func (c *maxUncompressedSizeCompleteCond) UntilError() bool   {
-	return false
-}
-
-func (c *maxUncompressedSizeCompleteCond) RecordError()  {
-	// do nothing
-}
-
-func (c *maxUncompressedSizeCompleteCond) IsValidUncompress(_ []byte) bool {
-	return true
-}

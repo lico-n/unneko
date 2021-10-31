@@ -21,9 +21,12 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 		return err
 	}
 
-	extractedChan := extractFiles(neko, keepOriginalLuacHeader)
+	checksumFile := findChecksumFile(neko)
+	neko.Seek(0)
 
-	extractedChan = restoreFileNames(extractedChan)
+	extractedChan := extractFiles(neko, checksumFile, keepOriginalLuacHeader)
+
+	extractedChan = restoreFileNames(checksumFile, extractedChan)
 
 	nekoBaseFileName := getNekoDataBaseFileName(inputPath)
 	outputPath = filepath.Join(outputPath, nekoBaseFileName)
@@ -41,17 +44,16 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 	return nil
 }
 
-var anotherFile = 0
-func extractFiles(neko *NekoData, keepOriginalLuacHeader bool) chan *extractedFile {
+
+func extractFiles(neko *NekoData, checksumFile *ChecksumFile, keepOriginalLuacHeader bool) chan *extractedFile {
 	extractedChan := make(chan *extractedFile, 1)
 
-	totalOffset := 0x18
+	csumCond := newChecksumCompleteCond(checksumFile)
 
 	go func() {
 		defer close(extractedChan)
 
 		for !neko.FullyRead() {
-			anotherFile++
 
 			startOffset := neko.CurrentOffset()
 			headerBytes := tryUncompressHeader(neko, 1)
@@ -89,14 +91,11 @@ func extractFiles(neko *NekoData, keepOriginalLuacHeader bool) chan *extractedFi
 				continue
 			}
 
-			file := extractPlainFile(neko)
+			file := extractPlainFile(neko, csumCond)
 			extractedChan <- file
-			totalOffset += neko.CurrentOffset()
 			neko = neko.SliceFromCurrentPos()
 
 		}
-
-		//fmt.Println(anotherFile)
 	}()
 
 	return extractedChan

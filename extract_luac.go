@@ -62,18 +62,6 @@ func (c *luacEndCompleteCond) Complete(neko *NekoData, uncompressed []byte) bool
 	return neko.FullyRead() || c.isEndOfFile(neko, uncompressed)
 }
 
-func (c *luacEndCompleteCond) InterruptBlock(neko *NekoData, uncompressedBlock []byte) bool {
-	return neko.FullyRead() || c.isEndOfFile(neko, uncompressedBlock)
-}
-
-func (c *luacEndCompleteCond) UntilError() bool {
-	return false
-}
-
-func (c *luacEndCompleteCond) RecordError()  {
-	// do nothing
-}
-
 
 func (c *luacEndCompleteCond) endsInFileFooter(uncompressed []byte) bool {
 	if len(uncompressed) < len(luacFileFooter) {
@@ -111,8 +99,3 @@ func (c *luacEndCompleteCond) isEndOfFile(neko *NekoData, uncompressed []byte) b
 
 	return true
 }
-
-func (c *luacEndCompleteCond) IsValidUncompress(_ []byte) bool {
-	return true
-}
-

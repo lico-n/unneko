@@ -72,6 +72,14 @@ func (neko *NekoData) SliceFromCurrentPos() *NekoData {
 	}
 }
 
+func (neko *NekoData) Index(sep []byte) int {
+	index :=  bytes.Index(neko.data[neko.currentPosition:], sep)
+	if index == -1 {
+		return -1
+	}
+	return neko.currentPosition+index
+}
+
 func (neko *NekoData) FullyRead() bool {
 	return len(neko.data) <= neko.currentPosition
 }
