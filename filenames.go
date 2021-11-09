@@ -100,7 +100,7 @@ func isChecksumFile(file *extractedFile) *ChecksumFile {
 		return nil
 	}
 
-	if len(checksumFile.Files) == 0 {
+	if checksumFile.Files == nil {
 		return nil
 	}
 
