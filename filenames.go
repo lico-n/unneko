@@ -28,7 +28,7 @@ func (cf *ChecksumFile) Copy() *ChecksumFile {
 }
 
 func findChecksumFile(neko *NekoData) *ChecksumFile {
-	checksumFileStart := []byte(`{"files":`)
+	checksumFileStart := []byte(`{`)
 	var possibleCheckSumFileStarts []int
 	for i := neko.Index(checksumFileStart); i != -1; i = neko.Index(checksumFileStart) {
 		possibleCheckSumFileStarts = append(possibleCheckSumFileStarts, i-2)

@@ -22,6 +22,10 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 	}
 
 	checksumFile := findChecksumFile(neko)
+
+	if checksumFile == nil {
+		return fmt.Errorf("unable to find checksum file")
+	}
 	neko.Seek(0)
 
 	extractedChan := extractFiles(neko, checksumFile, keepOriginalLuacHeader)
