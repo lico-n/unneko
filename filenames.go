@@ -14,26 +14,41 @@ type Checksum struct {
 }
 
 type ChecksumFile struct {
-	Files         map[string]Checksum `json:"files"`
+	Files map[string]Checksum `json:"files"`
 }
 
 func (cf *ChecksumFile) Copy() *ChecksumFile {
 	m := make(map[string]Checksum, len(cf.Files))
 	for k, v := range cf.Files {
-		m[k]= v
+		m[k] = v
 	}
 	return &ChecksumFile{
-		Files:         m,
+		Files: m,
 	}
 }
 
 func findChecksumFile(neko *NekoData) *ChecksumFile {
-	checksumFileStart := []byte(`{`)
+	alreadyFound := make(map[int]bool)
+	checksumFileStarts := [][]byte{
+		[]byte(`{"f`),
+		[]byte("{\n "),
+		[]byte(`{`),
+	}
+
 	var possibleCheckSumFileStarts []int
-	for i := neko.Index(checksumFileStart); i != -1; i = neko.Index(checksumFileStart) {
-		possibleCheckSumFileStarts = append(possibleCheckSumFileStarts, i-2)
-		possibleCheckSumFileStarts = append(possibleCheckSumFileStarts, i-1)
-		neko.Seek(i+1)
+	for _, checksumFileStart := range checksumFileStarts {
+		neko.Seek(0)
+		for i := neko.Index(checksumFileStart); i != -1; i = neko.Index(checksumFileStart) {
+			if alreadyFound[i] {
+				neko.Seek(i + 1)
+				continue
+			}
+
+			alreadyFound[i] = true
+			possibleCheckSumFileStarts = append(possibleCheckSumFileStarts, i-2)
+			possibleCheckSumFileStarts = append(possibleCheckSumFileStarts, i-1)
+			neko.Seek(i + 1)
+		}
 	}
 
 	for _, fileStart := range possibleCheckSumFileStarts {
@@ -106,17 +121,16 @@ func isChecksumFile(file *extractedFile) *ChecksumFile {
 
 	file.filePath = "checksum.json"
 
-
 	c := Checksum{
 		Adler32: adler32.Checksum(file.data),
 		Crc32:   crc32.ChecksumIEEE(file.data),
-		Size: len(file.data),
+		Size:    len(file.data),
 	}
 
 	checksumFile.Files[file.filePath] = c
 
 	return &ChecksumFile{
-		Files:         checksumFile.Files,
+		Files: checksumFile.Files,
 	}
 }
 
