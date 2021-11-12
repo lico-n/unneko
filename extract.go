@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,10 +21,10 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 	}
 
 	checksumFile := findChecksumFile(neko)
-
 	if checksumFile == nil {
 		return fmt.Errorf("unable to find checksum file")
 	}
+
 	neko.Seek(0)
 
 	extractedChan := extractFiles(neko, checksumFile, keepOriginalLuacHeader)
@@ -67,35 +66,7 @@ func extractFiles(neko *NekoData, checksumFile *ChecksumFile, keepOriginalLuacHe
 
 			neko.Seek(startOffset)
 
-			if len(headerBytes) >= 7 && string(headerBytes[:7]) == "UnityFS" {
-				file := extractUnityFile(neko)
-				extractedChan <- file
-				neko = neko.SliceFromCurrentPos()
-				continue
-			}
-
-			if headerBytes[0] == '{' {
-				file := extractJSONObjectFile(neko)
-				extractedChan <- file
-				neko = neko.SliceFromCurrentPos()
-				continue
-			}
-
-			if headerBytes[0] == '[' {
-				file := extractJSONArrayFile(neko)
-				extractedChan <- file
-				neko = neko.SliceFromCurrentPos()
-				continue
-			}
-
-			if len(headerBytes) >= 5 && bytes.Compare(headerBytes[:5], luacFileHeader) == 0 {
-				file := extractLuacFile(neko, keepOriginalLuacHeader)
-				extractedChan <- file
-				neko = neko.SliceFromCurrentPos()
-				continue
-			}
-
-			file := extractPlainFile(neko, csumCond)
+			file := extractWithChecksum(neko, csumCond)
 			extractedChan <- file
 			neko = neko.SliceFromCurrentPos()
 

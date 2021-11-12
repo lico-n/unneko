@@ -8,14 +8,6 @@ func extractJSONObjectFile(neko *NekoData) *extractedFile {
 	}
 }
 
-func extractJSONArrayFile(neko *NekoData) *extractedFile {
-	uncompressed := uncompressNeko(neko, newBracketCounterCompleteCond('[', ']'))
-	return &extractedFile{
-		data:          uncompressed,
-		fileExtension: ".json",
-	}
-}
-
 type bracketCounterCompleteCond struct {
 	openBracket byte
 	closeBracket byte

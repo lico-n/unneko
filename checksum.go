@@ -17,6 +17,15 @@ type ChecksumFile struct {
 	Files map[string]Checksum `json:"files"`
 }
 
+type PatchMetadata struct {
+	Checksum       Checksum
+	Name           string   `json:"name"`
+	Version        int      `json:"version"`
+	FromVersion    int      `json:"fromversion"`
+	DownloadServer []string `json:"downloadserver"`
+	VersionServer  []string `json:"versionserver"`
+}
+
 func (cf *ChecksumFile) Copy() *ChecksumFile {
 	m := make(map[string]Checksum, len(cf.Files))
 	for k, v := range cf.Files {
@@ -29,11 +38,19 @@ func (cf *ChecksumFile) Copy() *ChecksumFile {
 
 func findChecksumFile(neko *NekoData) *ChecksumFile {
 	alreadyFound := make(map[int]bool)
-	checksumFileStarts := [][]byte{
+	var checksumFileStarts [][]byte
+
+	if neko.isPatch {
+		checksumFileStarts = append(checksumFileStarts,
+			[]byte(`{"name`),
+		)
+	}
+
+	checksumFileStarts = append(checksumFileStarts,
 		[]byte(`{"f`),
 		[]byte("{\n "),
 		[]byte(`{`),
-	}
+	)
 
 	var possibleCheckSumFileStarts []int
 	for _, checksumFileStart := range checksumFileStarts {
@@ -51,6 +68,9 @@ func findChecksumFile(neko *NekoData) *ChecksumFile {
 		}
 	}
 
+	var checkSumFile *ChecksumFile
+	var patchMetadata *PatchMetadata
+
 	for _, fileStart := range possibleCheckSumFileStarts {
 		neko.Seek(fileStart)
 		headerBytes := tryUncompressHeader(neko, 1)
@@ -59,8 +79,18 @@ func findChecksumFile(neko *NekoData) *ChecksumFile {
 		}
 
 		neko.Seek(fileStart)
-		checkSumFile := tryExtractChecksumFile(neko)
-		if checkSumFile != nil {
+		checkSumFile = tryExtractChecksumFile(neko)
+		if checkSumFile != nil && !neko.isPatch {
+			return checkSumFile
+		}
+
+		if neko.isPatch && patchMetadata == nil {
+			neko.Seek(fileStart)
+			patchMetadata = tryExtractPatchMetadata(neko)
+		}
+
+		if checkSumFile != nil && patchMetadata != nil {
+			checkSumFile.Files["patch-meta.json"] = patchMetadata.Checksum
 			return checkSumFile
 		}
 	}
@@ -75,7 +105,57 @@ func tryExtractChecksumFile(neko *NekoData) *ChecksumFile {
 		}
 	}()
 	file := extractJSONObjectFile(neko)
-	return isChecksumFile(file)
+
+	var checksumFile *ChecksumFile
+
+	if err := json.Unmarshal(file.data, &checksumFile); err != nil {
+		return nil
+	}
+
+	if checksumFile.Files == nil {
+		return nil
+	}
+
+	file.filePath = "checksum.json"
+
+	c := Checksum{
+		Adler32: adler32.Checksum(file.data),
+		Crc32:   crc32.ChecksumIEEE(file.data),
+		Size:    len(file.data),
+	}
+
+	checksumFile.Files[file.filePath] = c
+
+	return &ChecksumFile{
+		Files: checksumFile.Files,
+	}
+}
+
+func tryExtractPatchMetadata(neko *NekoData) *PatchMetadata {
+	defer func() {
+		if r := recover(); r != nil {
+			// do nothing
+		}
+	}()
+	file := extractJSONObjectFile(neko)
+
+	var patchMetadataFile *PatchMetadata
+
+	if err := json.Unmarshal(file.data, &patchMetadataFile); err != nil {
+		return nil
+	}
+
+	if patchMetadataFile.Name == "" || len(patchMetadataFile.DownloadServer) == 0 {
+		return nil
+	}
+
+	patchMetadataFile.Checksum = Checksum{
+		Adler32: adler32.Checksum(file.data),
+		Crc32:   crc32.ChecksumIEEE(file.data),
+		Size:    len(file.data),
+	}
+
+	return patchMetadataFile
 }
 
 func restoreFileNames(checksumFile *ChecksumFile, extractedChan chan *extractedFile) chan *extractedFile {
@@ -102,36 +182,6 @@ func restoreFileNames(checksumFile *ChecksumFile, extractedChan chan *extractedF
 	}()
 
 	return resultCh
-}
-
-func isChecksumFile(file *extractedFile) *ChecksumFile {
-	if file.fileExtension != ".json" {
-		return nil
-	}
-
-	var checksumFile *ChecksumFile
-
-	if err := json.Unmarshal(file.data, &checksumFile); err != nil {
-		return nil
-	}
-
-	if checksumFile.Files == nil {
-		return nil
-	}
-
-	file.filePath = "checksum.json"
-
-	c := Checksum{
-		Adler32: adler32.Checksum(file.data),
-		Crc32:   crc32.ChecksumIEEE(file.data),
-		Size:    len(file.data),
-	}
-
-	checksumFile.Files[file.filePath] = c
-
-	return &ChecksumFile{
-		Files: checksumFile.Files,
-	}
 }
 
 func restoreFileName(checksumFile *ChecksumFile, file *extractedFile, fileIndex int) string {

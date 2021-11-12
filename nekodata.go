@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strings"
 )
-
 
 func loadNekoData(path string) (*NekoData, error) {
 	file, err := os.ReadFile(path)
@@ -18,18 +18,22 @@ func loadNekoData(path string) (*NekoData, error) {
 		return nil, fmt.Errorf(" %s not a nekodata file", path)
 	}
 
-	return NewNekoData(file[0x19:]), nil
+	isPatch := strings.HasSuffix(strings.ToLower(path), ".patch.nekodata")
+
+	return NewNekoData(file[0x19:], isPatch), nil
 }
 
 type NekoData struct {
 	data            []byte
 	currentPosition int
+	isPatch         bool
 }
 
-func NewNekoData(data []byte) *NekoData {
+func NewNekoData(data []byte, isPatch bool) *NekoData {
 	return &NekoData{
 		data:            data,
 		currentPosition: 0,
+		isPatch:         isPatch,
 	}
 }
 
@@ -69,15 +73,16 @@ func (neko *NekoData) SliceFromCurrentPos() *NekoData {
 	return &NekoData{
 		data:            neko.data[neko.currentPosition:],
 		currentPosition: 0,
+		isPatch:         neko.isPatch,
 	}
 }
 
 func (neko *NekoData) Index(sep []byte) int {
-	index :=  bytes.Index(neko.data[neko.currentPosition:], sep)
+	index := bytes.Index(neko.data[neko.currentPosition:], sep)
 	if index == -1 {
 		return -1
 	}
-	return neko.currentPosition+index
+	return neko.currentPosition + index
 }
 
 func (neko *NekoData) FullyRead() bool {
