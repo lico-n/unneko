@@ -7,14 +7,19 @@ import (
 	"strings"
 )
 
+var pixelnekoFilesystemHeader = []byte("pixelneko filesystem")
+
+func isPixelnekoFileHeader(bb []byte) bool {
+	return bytes.Compare(bb, pixelnekoFilesystemHeader) == 0
+}
+
 func loadNekoData(path string) (*NekoData, error) {
 	file, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("loading nekodata file at %s: %v", path, err)
 	}
 
-	fsHeader := string(file[:0x14])
-	if fsHeader != "pixelneko filesystem" || len(file) < 0x19 {
+	if len(file) < 0x19  || !isPixelnekoFileHeader(file[:0x14]) {
 		return nil, fmt.Errorf(" %s not a nekodata file", path)
 	}
 
@@ -43,6 +48,10 @@ func (neko *NekoData) ReadBytes(size int) []byte {
 	}
 
 	endPosition := neko.currentPosition + size
+	if len(neko.data) < endPosition {
+		endPosition = len(neko.data)
+	}
+
 	readBytes := neko.data[neko.currentPosition:endPosition]
 
 	neko.currentPosition = endPosition
@@ -55,10 +64,6 @@ func (neko *NekoData) ReadByte() byte {
 	neko.currentPosition++
 
 	return readByte
-}
-
-func (neko *NekoData) StillContains(bytePattern []byte) bool {
-	return bytes.Index(neko.data[neko.currentPosition:], bytePattern) != -1
 }
 
 func (neko *NekoData) Seek(position int) {

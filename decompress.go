@@ -43,16 +43,22 @@ func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
 }
 
 func uncompressNeko(neko *NekoData, completeCond CompleteCond) []byte {
-	var uncompressed []byte
+	var (
+		uncompressed []byte
+		complete bool
+	)
 
 	for !completeCond.Complete(neko, uncompressed) {
-		uncompressed = uncompressNekoBlock(neko, uncompressed, completeCond)
+		uncompressed, complete = uncompressNekoBlock(neko, uncompressed, completeCond)
+		if complete {
+			return uncompressed
+		}
 	}
 
 	return uncompressed
 }
 
-func uncompressNekoBlock(neko *NekoData, uncompressed []byte, completeCond CompleteCond) []byte {
+func uncompressNekoBlock(neko *NekoData, uncompressed []byte, completeCond CompleteCond) ([]byte, bool) {
 	previouslyUncompressed := len(uncompressed)
 
 	for !neko.FullyRead() {
@@ -61,8 +67,11 @@ func uncompressNekoBlock(neko *NekoData, uncompressed []byte, completeCond Compl
 		literals := neko.ReadBytes(token.nrOfLiterals)
 		uncompressed = append(uncompressed, literals...)
 
-		if len(uncompressed)-previouslyUncompressed == 0x8000 || completeCond.Complete(neko, uncompressed) {
-			break
+		if len(uncompressed)-previouslyUncompressed == 0x8000 {
+			return uncompressed, false
+		}
+		if completeCond.Complete(neko, uncompressed) {
+			return uncompressed, true
 		}
 
 		matchOffset := readMatchOffset(neko)
@@ -71,7 +80,7 @@ func uncompressNekoBlock(neko *NekoData, uncompressed []byte, completeCond Compl
 		uncompressed = appendMatches(uncompressed, nrOfMatches, matchOffset)
 	}
 
-	return uncompressed
+	return uncompressed, true
 }
 
 type Token struct {

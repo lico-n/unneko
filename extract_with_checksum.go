@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"hash/crc32"
 )
 
@@ -10,27 +9,38 @@ func extractWithChecksum(neko *NekoData, completeCond CompleteCond) *extractedFi
 
 	return &extractedFile{
 		data:          uncompressed,
-		fileExtension: ".lua",
 	}
 }
 
-type checksumCompleteCond struct {
+type checksumFileMap struct {
 	checksums map[uint32]struct{}
 	fileSizes map[int]struct{}
 }
 
-func newChecksumCompleteCond(checksumFile *ChecksumFile) *checksumCompleteCond {
-	checksums := make(map[uint32]struct{}, len(checksumFile.Files))
-	fileSizes := make(map[int]struct{}, len(checksumFile.Files))
+type checksumCompleteCond struct {
+	maps []*checksumFileMap
+}
 
-	for _, v := range checksumFile.Files {
-		checksums[v.Crc32] = struct{}{}
-		fileSizes[v.Size] = struct{}{}
+func newChecksumCompleteCond(checksumFiles []*ChecksumFile) *checksumCompleteCond {
+	maps := make([]*checksumFileMap, 0, len(checksumFiles))
+
+	for _, v := range checksumFiles {
+		checksums := make(map[uint32]struct{}, len(v.Files))
+		fileSizes := make(map[int]struct{}, len(v.Files))
+
+		for _, f := range v.Files {
+			checksums[f.Crc32] = struct{}{}
+			fileSizes[f.Size] = struct{}{}
+		}
+
+		maps = append(maps, &checksumFileMap{
+			checksums: checksums,
+			fileSizes: fileSizes,
+		})
 	}
 
 	return &checksumCompleteCond{
-		checksums: checksums,
-		fileSizes: fileSizes,
+		maps: maps,
 	}
 }
 
@@ -39,14 +49,25 @@ func (c *checksumCompleteCond) Complete(neko *NekoData, uncompressed []byte) boo
 		return true
 	}
 
-	if _, ok := c.fileSizes[len(uncompressed)]; !ok {
+	validFileSize := false
+
+	for _, v := range c.maps {
+		if _, ok := v.fileSizes[len(uncompressed)]; ok {
+			validFileSize = true
+			break
+		}
+	}
+
+	if !validFileSize {
 		return false
 	}
 
-	fmt.Println("yay")
 	checksum := crc32.ChecksumIEEE(uncompressed)
-	if _, ok := c.checksums[checksum]; ok {
-		return true
+
+	for _, v := range c.maps {
+		if _, ok := v.checksums[checksum]; ok {
+			return true
+		}
 	}
 
 	return false

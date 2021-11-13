@@ -36,7 +36,7 @@ func (cf *ChecksumFile) Copy() *ChecksumFile {
 	}
 }
 
-func findChecksumFile(neko *NekoData) *ChecksumFile {
+func findChecksumFiles(neko *NekoData) []*ChecksumFile {
 	alreadyFound := make(map[int]bool)
 	var checksumFileStarts [][]byte
 
@@ -49,7 +49,6 @@ func findChecksumFile(neko *NekoData) *ChecksumFile {
 	checksumFileStarts = append(checksumFileStarts,
 		[]byte(`{"f`),
 		[]byte("{\n "),
-		[]byte(`{`),
 	)
 
 	var possibleCheckSumFileStarts []int
@@ -68,7 +67,7 @@ func findChecksumFile(neko *NekoData) *ChecksumFile {
 		}
 	}
 
-	var checkSumFile *ChecksumFile
+	var checkSumFiles []*ChecksumFile
 	var patchMetadata *PatchMetadata
 
 	for _, fileStart := range possibleCheckSumFileStarts {
@@ -79,23 +78,25 @@ func findChecksumFile(neko *NekoData) *ChecksumFile {
 		}
 
 		neko.Seek(fileStart)
-		checkSumFile = tryExtractChecksumFile(neko)
-		if checkSumFile != nil && !neko.isPatch {
-			return checkSumFile
+		checkSumFile := tryExtractChecksumFile(neko)
+		if checkSumFile != nil {
+			checkSumFiles = append(checkSumFiles, checkSumFile)
+			continue
 		}
 
 		if neko.isPatch && patchMetadata == nil {
 			neko.Seek(fileStart)
 			patchMetadata = tryExtractPatchMetadata(neko)
 		}
+	}
 
-		if checkSumFile != nil && patchMetadata != nil {
-			checkSumFile.Files["patch-meta.json"] = patchMetadata.Checksum
-			return checkSumFile
+	if patchMetadata != nil {
+		for _, v := range checkSumFiles {
+			v.Files["patch-meta.json"] = patchMetadata.Checksum
 		}
 	}
 
-	return nil
+	return checkSumFiles
 }
 
 func tryExtractChecksumFile(neko *NekoData) *ChecksumFile {
@@ -158,7 +159,14 @@ func tryExtractPatchMetadata(neko *NekoData) *PatchMetadata {
 	return patchMetadataFile
 }
 
-func restoreFileNames(checksumFile *ChecksumFile, extractedChan chan *extractedFile) chan *extractedFile {
+func restoreFileNames(checksumFiles []*ChecksumFile, extractedChan chan *extractedFile) chan *extractedFile {
+
+	copies := make([]*ChecksumFile, 0, len(checksumFiles))
+	for _, v := range checksumFiles {
+		copies = append(copies, v.Copy())
+	}
+
+	checksumFiles = copies
 
 	resultCh := make(chan *extractedFile, 1)
 	go func() {
@@ -166,8 +174,8 @@ func restoreFileNames(checksumFile *ChecksumFile, extractedChan chan *extractedF
 		var fileIndex = 0
 
 		for file := range extractedChan {
-			if checksumFile != nil {
-				file.filePath = restoreFileName(checksumFile, file, fileIndex)
+			if len(checksumFiles) > 0 {
+				file.filePath = restoreFileName(checksumFiles, file, fileIndex)
 				resultCh <- file
 				continue
 			}
@@ -184,16 +192,18 @@ func restoreFileNames(checksumFile *ChecksumFile, extractedChan chan *extractedF
 	return resultCh
 }
 
-func restoreFileName(checksumFile *ChecksumFile, file *extractedFile, fileIndex int) string {
-	checksumFile = checksumFile.Copy()
+func restoreFileName(checksumFiles []*ChecksumFile, file *extractedFile, fileIndex int) string {
 	checksum := crc32.ChecksumIEEE(file.data)
 
-	for fileName, checksums := range checksumFile.Files {
-		if checksums.Crc32 == checksum && len(file.data) == checksums.Size {
-			delete(checksumFile.Files, fileName)
-			return fileName
+	for _, checksumFile := range checksumFiles {
+		for fileName, checksums := range checksumFile.Files {
+			if checksums.Crc32 == checksum && len(file.data) == checksums.Size {
+				delete(checksumFile.Files, fileName)
+				return fileName
+			}
 		}
 	}
+
 
 	if file.filePath != "" {
 		return file.filePath

@@ -14,22 +14,22 @@ type extractedFile struct {
 	fileExtension string
 }
 
-func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader bool) error {
+func extractNekoData(inputPath string, outputPath string) error {
 	neko, err := loadNekoData(inputPath)
 	if err != nil {
 		return err
 	}
 
-	checksumFile := findChecksumFile(neko)
-	if checksumFile == nil {
+	checksumFiles := findChecksumFiles(neko)
+	if len(checksumFiles) == 0 {
 		return fmt.Errorf("unable to find checksum file")
 	}
 
 	neko.Seek(0)
 
-	extractedChan := extractFiles(neko, checksumFile, keepOriginalLuacHeader)
+	extractedChan := extractFiles(neko, checksumFiles)
 
-	extractedChan = restoreFileNames(checksumFile, extractedChan)
+	extractedChan = restoreFileNames(checksumFiles, extractedChan)
 
 	nekoBaseFileName := getNekoDataBaseFileName(inputPath)
 	outputPath = filepath.Join(outputPath, nekoBaseFileName)
@@ -48,24 +48,32 @@ func extractNekoData(inputPath string, outputPath string, keepOriginalLuacHeader
 }
 
 
-func extractFiles(neko *NekoData, checksumFile *ChecksumFile, keepOriginalLuacHeader bool) chan *extractedFile {
+func extractFiles(neko *NekoData, checksumFiles []*ChecksumFile) chan *extractedFile {
 	extractedChan := make(chan *extractedFile, 1)
 
-	csumCond := newChecksumCompleteCond(checksumFile)
+	csumCond := newChecksumCompleteCond(checksumFiles)
 
 	go func() {
 		defer close(extractedChan)
 
 		for !neko.FullyRead() {
-
 			startOffset := neko.CurrentOffset()
+
+			if strings.HasPrefix(string(neko.ReadBytes(19)), "pixelneko") {
+				neko.Seek(startOffset)
+				file := extractUncompressed(neko, checksumFiles)
+				extractedChan <- file
+				neko = neko.SliceFromCurrentPos()
+				continue
+			}
+
+			neko.Seek(startOffset)
 			headerBytes := tryUncompressHeader(neko, 1)
 			if len(headerBytes) == 0 {
 				break
 			}
 
 			neko.Seek(startOffset)
-
 			file := extractWithChecksum(neko, csumCond)
 			extractedChan <- file
 			neko = neko.SliceFromCurrentPos()
