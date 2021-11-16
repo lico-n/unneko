@@ -56,12 +56,12 @@ func extractFiles(neko *NekoData, checksumFiles []*ChecksumFile) chan *extracted
 	go func() {
 		defer close(extractedChan)
 
-		for !neko.FullyRead() {
+		for !neko.FullyRead() && !csumCond.FoundAll() {
 			startOffset := neko.CurrentOffset()
 
 			if strings.HasPrefix(string(neko.ReadBytes(19)), "pixelneko") {
 				neko.Seek(startOffset)
-				file := extractUncompressed(neko, checksumFiles)
+				file := extractUncompressed(neko, csumCond)
 				extractedChan <- file
 				neko = neko.SliceFromCurrentPos()
 				continue
@@ -78,6 +78,10 @@ func extractFiles(neko *NekoData, checksumFiles []*ChecksumFile) chan *extracted
 			extractedChan <- file
 			neko = neko.SliceFromCurrentPos()
 
+		}
+
+		if !csumCond.FoundAll() {
+			fmt.Fprint(os.Stderr, "process finished but not all files were found\n")
 		}
 	}()
 

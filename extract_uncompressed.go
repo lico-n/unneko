@@ -1,27 +1,7 @@
 package main
 
-import (
-	"hash/crc32"
-	"sort"
-)
-
-func extractUncompressed(neko *NekoData, checksumFiles []*ChecksumFile) *extractedFile {
-	var possibleFileSizes []int
-	alreadySeen := make(map[int]bool)
-
-	for _, v := range checksumFiles {
-		for _, f := range v.Files {
-			if alreadySeen[f.Size] {
-				continue
-			}
-
-			alreadySeen[f.Size] = true
-
-			possibleFileSizes = append(possibleFileSizes, f.Size)
-		}
-	}
-
-	sort.Ints(possibleFileSizes)
+func extractUncompressed(neko *NekoData, csumCond *checksumCompleteCond) *extractedFile {
+	possibleFileSizes := csumCond.PossibleFileSizes()
 
 	var data []byte
 
@@ -30,11 +10,9 @@ func extractUncompressed(neko *NekoData, checksumFiles []*ChecksumFile) *extract
 		newData := neko.ReadBytes(toRead)
 		data = append(data, newData...)
 
-		checksum := crc32.ChecksumIEEE(data)
-		if ok := containsChecksum(checksumFiles, checksum); ok {
-			return &extractedFile{
-				data: data,
-			}
+		if csumCond.Complete(neko, data) {
+			csumCond.MarkAsFound(data)
+			break
 		}
 	}
 

@@ -4,6 +4,10 @@ type CompleteCond interface {
 	Complete(neko *NekoData, uncompressed []byte) bool
 }
 
+type FoundRegistry interface {
+	MarkAsFound(uncompressedData []byte)
+}
+
 func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
 	startOffset := neko.CurrentOffset()
 
@@ -45,14 +49,18 @@ func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
 func uncompressNeko(neko *NekoData, completeCond CompleteCond) []byte {
 	var (
 		uncompressed []byte
-		complete bool
+		complete     bool
 	)
 
 	for !completeCond.Complete(neko, uncompressed) {
 		uncompressed, complete = uncompressNekoBlock(neko, uncompressed, completeCond)
 		if complete {
-			return uncompressed
+			break
 		}
+	}
+
+	if reg, ok := completeCond.(FoundRegistry); ok {
+		reg.MarkAsFound(uncompressed)
 	}
 
 	return uncompressed
