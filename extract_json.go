@@ -1,5 +1,8 @@
 package main
 
+// extractJSONObjectFile extracts a compressed json object at the current NekoData position.
+// It will count brackets to determine when to stop the decompression.
+// when there are as many opening brackets as closing ones, the json object is extracted successfully.
 func extractJSONObjectFile(neko *NekoData) *extractedFile {
 	uncompressed := uncompressNeko(neko, newBracketCounterCompleteCond('{', '}'))
 	return &extractedFile{

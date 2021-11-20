@@ -14,7 +14,7 @@ func main() {
 	args := flag.Args()
 
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "unneko v1.11.0 by Lico#6969")
+		fmt.Fprintln(os.Stderr, "unneko v1.12.0 by Lico#6969")
 		fmt.Fprintln(os.Stderr, "Usage: unneko <flags> input-file")
 		flag.PrintDefaults()
 		os.Exit(-1)

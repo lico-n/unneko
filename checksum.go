@@ -2,28 +2,17 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"hash/adler32"
+	"errors"
 	"hash/crc32"
 )
 
 type Checksum struct {
-	Adler32 uint32 `json:"adler32"`
-	Crc32   uint32 `json:"crc32"`
-	Size    int    `json:"size"`
+	Crc32 uint32 `json:"crc32"`
+	Size  int    `json:"size"`
 }
 
 type ChecksumFile struct {
 	Files map[string]Checksum `json:"files"`
-}
-
-type PatchMetadata struct {
-	Checksum       Checksum
-	Name           string   `json:"name"`
-	Version        int      `json:"version"`
-	FromVersion    int      `json:"fromversion"`
-	DownloadServer []string `json:"downloadserver"`
-	VersionServer  []string `json:"versionserver"`
 }
 
 func (cf *ChecksumFile) Copy() *ChecksumFile {
@@ -36,23 +25,38 @@ func (cf *ChecksumFile) Copy() *ChecksumFile {
 	}
 }
 
+type PatchMetadata struct {
+	Checksum       Checksum
+	Name           string   `json:"name"`
+	DownloadServer []string `json:"downloadserver"`
+}
+
+// findChecksumFiles tries to find checksum files in NekoData.
+// It tries to utilize the fact that the first lz4 sequence always contains literals.
+// So we search for the start of an json object and try to decompress it to check
+// whether this is a checksum file. This is a pretty inefficient process
+// so we try to reduce the amount of possible json file starts by including a few more literals
+// At the same time we look for patch metadata which is included in .patch.metadata
+// we need to identify it because it's not included in the checksum file
 func findChecksumFiles(neko *NekoData) []*ChecksumFile {
 	alreadyFound := make(map[int]bool)
-	var checksumFileStarts [][]byte
+	var fileHeaders [][]byte
 
 	if neko.isPatch {
-		checksumFileStarts = append(checksumFileStarts,
-			[]byte(`{"name`),
+		fileHeaders = append(fileHeaders,
+			[]byte(`{"name`), // patch metadata filestart
 		)
 	}
 
-	checksumFileStarts = append(checksumFileStarts,
-		[]byte(`{"f`),
-		[]byte("{\n "),
+	fileHeaders = append(fileHeaders,
+		[]byte(`{"f`),  // checksum file start when it's unformatted
+		[]byte("{\n "), // checksum/patch metadata file start when it's formmted
 	)
 
-	var possibleCheckSumFileStarts []int
-	for _, checksumFileStart := range checksumFileStarts {
+	var fileStartIndices []int
+
+	// search for possible file starts
+	for _, checksumFileStart := range fileHeaders {
 		neko.Seek(0)
 		for i := neko.Index(checksumFileStart); i != -1; i = neko.Index(checksumFileStart) {
 			if alreadyFound[i] {
@@ -61,8 +65,10 @@ func findChecksumFiles(neko *NekoData) []*ChecksumFile {
 			}
 
 			alreadyFound[i] = true
-			possibleCheckSumFileStarts = append(possibleCheckSumFileStarts, i-2)
-			possibleCheckSumFileStarts = append(possibleCheckSumFileStarts, i-1)
+			// As the files are not that big it's very likely that the lz4 token and extended lit length
+			// starts one or two bytes before the literal
+			fileStartIndices = append(fileStartIndices, i-2)
+			fileStartIndices = append(fileStartIndices, i-1)
 			neko.Seek(i + 1)
 		}
 	}
@@ -70,7 +76,10 @@ func findChecksumFiles(neko *NekoData) []*ChecksumFile {
 	var checkSumFiles []*ChecksumFile
 	var patchMetadata *PatchMetadata
 
-	for _, fileStart := range possibleCheckSumFileStarts {
+	// try to decompress on each possible file start
+	// we need to look for multiple checksum files because we might get the wrong one
+	// from a nested nekodata
+	for _, fileStart := range fileStartIndices {
 		neko.Seek(fileStart)
 		headerBytes := tryUncompressHeader(neko, 1)
 		if len(headerBytes) == 0 {
@@ -90,6 +99,8 @@ func findChecksumFiles(neko *NekoData) []*ChecksumFile {
 		}
 	}
 
+	// for convenience reasons we will add the patch metadata to the checksum file
+	// so everything else can be handled the same
 	if patchMetadata != nil {
 		for _, v := range checkSumFiles {
 			v.Files["patch-meta.json"] = patchMetadata.Checksum
@@ -120,9 +131,8 @@ func tryExtractChecksumFile(neko *NekoData) *ChecksumFile {
 	file.filePath = "checksum.json"
 
 	c := Checksum{
-		Adler32: adler32.Checksum(file.data),
-		Crc32:   crc32.ChecksumIEEE(file.data),
-		Size:    len(file.data),
+		Crc32: crc32.ChecksumIEEE(file.data),
+		Size:  len(file.data),
 	}
 
 	checksumFile.Files[file.filePath] = c
@@ -151,9 +161,8 @@ func tryExtractPatchMetadata(neko *NekoData) *PatchMetadata {
 	}
 
 	patchMetadataFile.Checksum = Checksum{
-		Adler32: adler32.Checksum(file.data),
-		Crc32:   crc32.ChecksumIEEE(file.data),
-		Size:    len(file.data),
+		Crc32: crc32.ChecksumIEEE(file.data),
+		Size:  len(file.data),
 	}
 
 	return patchMetadataFile
@@ -171,43 +180,40 @@ func restoreFileNames(checksumFiles []*ChecksumFile, extractedChan chan *extract
 	resultCh := make(chan *extractedFile, 1)
 	go func() {
 		defer close(resultCh)
-		var fileIndex = 0
 
 		for file := range extractedChan {
-			if len(checksumFiles) > 0 {
-				file.filePath = restoreFileName(checksumFiles, file, fileIndex)
-				resultCh <- file
-				continue
+			fileName, err := restoreFileName(checksumFiles, file)
+			if err != nil {
+				panic(err)
 			}
 
-			if file.filePath == "" {
-				file.filePath = fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
-			}
-
+			file.filePath = fileName
 			resultCh <- file
-
 		}
 	}()
 
 	return resultCh
 }
 
-func restoreFileName(checksumFiles []*ChecksumFile, file *extractedFile, fileIndex int) string {
+
+// restoreFileName tries to find the filename by using the checksum
+// It's possible that there are multiples files with the same checksum for very short luas
+// f.e `return {}`, we delete a checksum entry so the next time we find the same checksum
+// we will generate the next filename.
+// In general this should work fine but it's possible we accidentally find a filename
+// in a nested checksum. This is very unlikely though as the .patch.metadata contains bigger files
+// with different file contents. Normal nekodata will only have one checksum file
+func restoreFileName(checksumFiles []*ChecksumFile, file *extractedFile) (string, error) {
 	checksum := crc32.ChecksumIEEE(file.data)
 
 	for _, checksumFile := range checksumFiles {
 		for fileName, checksums := range checksumFile.Files {
 			if checksums.Crc32 == checksum && len(file.data) == checksums.Size {
 				delete(checksumFile.Files, fileName)
-				return fileName
+				return fileName, nil
 			}
 		}
 	}
 
-
-	if file.filePath != "" {
-		return file.filePath
-	}
-
-	return fmt.Sprintf("%d%s", fileIndex, file.fileExtension)
+	return "", errors.New("unable to find filename")
 }

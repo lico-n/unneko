@@ -1,12 +1,13 @@
 package main
 
+
+// CompleteCond will indicate when the uncompressed file is finished
+// Compared to normal lz4 decompression we do not know the file boundaries
+// so we need to know when to stop the decompression in other ways.
 type CompleteCond interface {
 	Complete(neko *NekoData, uncompressed []byte) bool
 }
 
-type FoundRegistry interface {
-	MarkAsFound(uncompressedData []byte)
-}
 
 func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
 	startOffset := neko.CurrentOffset()
@@ -59,10 +60,6 @@ func uncompressNeko(neko *NekoData, completeCond CompleteCond) []byte {
 		}
 	}
 
-	if reg, ok := completeCond.(FoundRegistry); ok {
-		reg.MarkAsFound(uncompressed)
-	}
-
 	return uncompressed
 }
 
@@ -75,6 +72,8 @@ func uncompressNekoBlock(neko *NekoData, uncompressed []byte, completeCond Compl
 		literals := neko.ReadBytes(token.nrOfLiterals)
 		uncompressed = append(uncompressed, literals...)
 
+		// maximum block length is 0x8000 bytes. The file is not complete yet
+		// but the lz4 decompression algorithm will reset and start again
 		if len(uncompressed)-previouslyUncompressed == 0x8000 {
 			return uncompressed, false
 		}
