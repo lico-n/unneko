@@ -12,19 +12,27 @@ func extractJSONObjectFile(neko *NekoData) *extractedFile {
 }
 
 type bracketCounterCompleteCond struct {
-	openBracket byte
-	closeBracket byte
+	openBracket   byte
+	closeBracket  byte
+	previousDelta int
+	previousPos   int
 }
 
 func newBracketCounterCompleteCond(openBracket byte, closeBracket byte) *bracketCounterCompleteCond {
 	return &bracketCounterCompleteCond{
-		openBracket: openBracket,
+		openBracket:  openBracket,
 		closeBracket: closeBracket,
 	}
 }
 
 func (c *bracketCounterCompleteCond) Complete(neko *NekoData, uncompressed []byte) bool {
-	delta :=  c.getBracketDelta(uncompressed)
+
+	currentDelta := c.getBracketDelta(uncompressed[c.previousPos:])
+
+	delta := c.previousDelta + currentDelta
+
+	c.previousPos = len(uncompressed)
+	c.previousDelta = delta
 
 	return neko.FullyRead() || (len(uncompressed) > 0 && delta == 0)
 }
