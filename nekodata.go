@@ -1,10 +1,8 @@
-package main
+package unneko
 
 import (
 	"bytes"
-	"fmt"
-	"os"
-	"strings"
+	"errors"
 )
 
 var pixelnekoFilesystemHeader = []byte("pixelneko filesystem")
@@ -13,36 +11,25 @@ func isPixelnekoFileHeader(bb []byte) bool {
 	return bytes.Compare(bb, pixelnekoFilesystemHeader) == 0
 }
 
-func loadNekoData(path string) (*NekoData, error) {
-	file, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("loading nekodata file at %s: %v", path, err)
-	}
-
+func newNekoData(file []byte, isPatchFile bool) (*nekoData, error) {
 	if len(file) < 0x19  || !isPixelnekoFileHeader(file[:0x14]) {
-		return nil, fmt.Errorf(" %s not a nekodata file", path)
+		return nil, errors.New("invalid nekoData file header")
 	}
 
-	isPatch := strings.HasSuffix(strings.ToLower(path), ".patch.nekodata")
-
-	return NewNekoData(file[0x19:], isPatch), nil
+	return &nekoData{
+		data:            file[0x19:],
+		currentPosition: 0,
+		isPatch:         isPatchFile,
+	}, nil
 }
 
-type NekoData struct {
+type nekoData struct {
 	data            []byte
 	currentPosition int
 	isPatch         bool
 }
 
-func NewNekoData(data []byte, isPatch bool) *NekoData {
-	return &NekoData{
-		data:            data,
-		currentPosition: 0,
-		isPatch:         isPatch,
-	}
-}
-
-func (neko *NekoData) ReadBytes(size int) []byte {
+func (neko *nekoData) readBytes(size int) []byte {
 	if size == 0 {
 		return nil
 	}
@@ -59,30 +46,21 @@ func (neko *NekoData) ReadBytes(size int) []byte {
 	return readBytes
 }
 
-func (neko *NekoData) ReadByte() byte {
+func (neko *nekoData) readByte() byte {
 	readByte := neko.data[neko.currentPosition]
 	neko.currentPosition++
-
 	return readByte
 }
 
-func (neko *NekoData) Seek(position int) {
+func (neko *nekoData) seek(position int) {
 	neko.currentPosition = position
 }
 
-func (neko *NekoData) CurrentOffset() int {
+func (neko *nekoData) currentOffset() int {
 	return neko.currentPosition
 }
 
-func (neko *NekoData) SliceFromCurrentPos() *NekoData {
-	return &NekoData{
-		data:            neko.data[neko.currentPosition:],
-		currentPosition: 0,
-		isPatch:         neko.isPatch,
-	}
-}
-
-func (neko *NekoData) Index(sep []byte) int {
+func (neko *nekoData) index(sep []byte) int {
 	index := bytes.Index(neko.data[neko.currentPosition:], sep)
 	if index == -1 {
 		return -1
@@ -90,6 +68,6 @@ func (neko *NekoData) Index(sep []byte) int {
 	return neko.currentPosition + index
 }
 
-func (neko *NekoData) FullyRead() bool {
+func (neko *nekoData) fullyRead() bool {
 	return len(neko.data) <= neko.currentPosition
 }

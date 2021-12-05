@@ -1,15 +1,4 @@
-package main
-
-// extractJSONObjectFile extracts a compressed json object at the current NekoData position.
-// It will count brackets to determine when to stop the decompression.
-// when there are as many opening brackets as closing ones, the json object is extracted successfully.
-func extractJSONObjectFile(neko *NekoData) *extractedFile {
-	uncompressed := uncompressNeko(neko, newBracketCounterCompleteCond('{', '}'))
-	return &extractedFile{
-		data:          uncompressed,
-		fileExtension: ".json",
-	}
-}
+package unneko
 
 type bracketCounterCompleteCond struct {
 	openBracket   byte
@@ -25,8 +14,7 @@ func newBracketCounterCompleteCond(openBracket byte, closeBracket byte) *bracket
 	}
 }
 
-func (c *bracketCounterCompleteCond) Complete(neko *NekoData, uncompressed []byte) bool {
-
+func (c *bracketCounterCompleteCond) Complete(neko *nekoData, uncompressed []byte) bool {
 	currentDelta := c.getBracketDelta(uncompressed[c.previousPos:])
 
 	delta := c.previousDelta + currentDelta
@@ -34,7 +22,7 @@ func (c *bracketCounterCompleteCond) Complete(neko *NekoData, uncompressed []byt
 	c.previousPos = len(uncompressed)
 	c.previousDelta = delta
 
-	return neko.FullyRead() || (len(uncompressed) > 0 && delta == 0)
+	return neko.fullyRead() || (len(uncompressed) > 0 && delta == 0)
 }
 
 func (c *bracketCounterCompleteCond) getBracketDelta(data []byte) int {

@@ -1,22 +1,9 @@
-package main
+package unneko
 
 import (
 	"hash/crc32"
 	"sort"
 )
-
-// extractWithChecksum extracts arbitrary compressed files at the current position.
-// It will use the checksum files to determine when to stop the decompression.
-// When the checksum of the uncompressed bytes matches a file in the checksum file it will stop.
-func extractWithChecksum(neko *NekoData, completeCond *checksumCompleteCond) *extractedFile {
-	uncompressed := uncompressNeko(neko, completeCond)
-
-	completeCond.MarkAsFound(uncompressed)
-
-	return &extractedFile{
-		data: uncompressed,
-	}
-}
 
 type checksumFileMap struct {
 	checksums map[uint32]int
@@ -27,7 +14,7 @@ type checksumCompleteCond struct {
 	maps []*checksumFileMap
 }
 
-func newChecksumCompleteCond(checksumFiles []*ChecksumFile) *checksumCompleteCond {
+func newChecksumCompleteCond(checksumFiles []*checksumFile) *checksumCompleteCond {
 	maps := make([]*checksumFileMap, 0, len(checksumFiles))
 
 	for _, v := range checksumFiles {
@@ -50,8 +37,8 @@ func newChecksumCompleteCond(checksumFiles []*ChecksumFile) *checksumCompleteCon
 	}
 }
 
-func (c *checksumCompleteCond) Complete(neko *NekoData, uncompressed []byte) bool {
-	if neko.FullyRead() {
+func (c *checksumCompleteCond) Complete(neko *nekoData, uncompressed []byte) bool {
+	if neko.fullyRead() {
 		return true
 	}
 
@@ -71,10 +58,10 @@ func (c *checksumCompleteCond) Complete(neko *NekoData, uncompressed []byte) boo
 	}
 
 	// file successfully extracted if it's a known checksum from the checksum file
-	checksum := crc32.ChecksumIEEE(uncompressed)
+	chSum := crc32.ChecksumIEEE(uncompressed)
 
 	for _, v := range c.maps {
-		if _, ok := v.checksums[checksum]; ok {
+		if _, ok := v.checksums[chSum]; ok {
 			return true
 		}
 	}
@@ -83,14 +70,14 @@ func (c *checksumCompleteCond) Complete(neko *NekoData, uncompressed []byte) boo
 }
 
 func (c *checksumCompleteCond) MarkAsFound(data []byte) {
-	checksum := crc32.ChecksumIEEE(data)
+	chSum := crc32.ChecksumIEEE(data)
 
 	// As we don't know which checksum file we found is the correct one
 	// we will decrement the checksum on each checksum file.
 	// When the first one is empty it will indicate that the decompression is finished
 	for _, v := range c.maps {
-		if v.checksums[checksum] > 0 {
-			v.checksums[checksum]--
+		if v.checksums[chSum] > 0 {
+			v.checksums[chSum]--
 		}
 	}
 }
@@ -115,16 +102,15 @@ func (c *checksumCompleteCond) FoundAll() bool {
 }
 
 func (c *checksumCompleteCond) PossibleFileSizes() []int {
-
 	var result []int
-	alreadySeen := make(map[int]bool)
+	alreadySeen := make(map[int]struct{})
 
 	for _, m := range c.maps {
 		for fs, _ := range m.fileSizes {
-			if alreadySeen[fs] {
+			if _, ok := alreadySeen[fs]; ok {
 				continue
 			}
-			alreadySeen[fs] = true
+			alreadySeen[fs] = struct{}{}
 			result = append(result, fs)
 		}
 	}

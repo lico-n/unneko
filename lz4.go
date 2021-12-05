@@ -1,23 +1,17 @@
-package main
+package unneko
 
-
-// CompleteCond will indicate when the uncompressed file is finished
+// completeCond will indicate when the uncompressed file is finished
 // Compared to normal lz4 decompression we do not know the file boundaries
 // so we need to know when to stop the decompression in other ways.
-type CompleteCond interface {
-	Complete(neko *NekoData, uncompressed []byte) bool
+type completeCond interface {
+	Complete(neko *nekoData, uncompressed []byte) bool
 }
 
-
-func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
-	startOffset := neko.CurrentOffset()
-
+func tryUncompressHeader(neko *nekoData, numberOfSeq int) []byte {
+	startOffset := neko.currentOffset()
 	defer func() {
-		if r := recover(); r != nil {
-			// end of compressed data block reached, there are no more compressed files
-			// reset to status before uncompressing attempt
-			neko.Seek(startOffset)
-		}
+		recover() // ignore panics
+		neko.seek(startOffset)
 	}()
 
 	var uncompressed []byte
@@ -25,17 +19,17 @@ func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
 	for i := 0; i < numberOfSeq; i++ {
 		token := readToken(neko)
 
-		literals := neko.ReadBytes(token.nrOfLiterals)
+		literals := neko.readBytes(token.nrOfLiterals)
 		uncompressed = append(uncompressed, literals...)
 
 		if token.tokenByte&0xF == 0 {
-			beforeMatchOffset := neko.CurrentOffset()
+			beforeMatchOffset := neko.currentOffset()
 			matchOffset := readMatchOffset(neko)
 			if len(uncompressed)-matchOffset <= 0 {
-				neko.Seek(beforeMatchOffset)
+				neko.seek(beforeMatchOffset)
 				break
 			}
-			neko.Seek(beforeMatchOffset)
+			neko.seek(beforeMatchOffset)
 		}
 
 		matchOffset := readMatchOffset(neko)
@@ -47,14 +41,14 @@ func tryUncompressHeader(neko *NekoData, numberOfSeq int) []byte {
 	return uncompressed
 }
 
-func uncompressNeko(neko *NekoData, completeCond CompleteCond) []byte {
+func uncompressNeko(neko *nekoData, cCond completeCond) []byte {
 	var (
 		uncompressed []byte
 		complete     bool
 	)
 
-	for !completeCond.Complete(neko, uncompressed) {
-		uncompressed, complete = uncompressNekoBlock(neko, uncompressed, completeCond)
+	for !cCond.Complete(neko, uncompressed) {
+		uncompressed, complete = uncompressNekoBlock(neko, uncompressed, cCond)
 		if complete {
 			break
 		}
@@ -63,13 +57,13 @@ func uncompressNeko(neko *NekoData, completeCond CompleteCond) []byte {
 	return uncompressed
 }
 
-func uncompressNekoBlock(neko *NekoData, uncompressed []byte, completeCond CompleteCond) ([]byte, bool) {
+func uncompressNekoBlock(neko *nekoData, uncompressed []byte, completeCond completeCond) ([]byte, bool) {
 	previouslyUncompressed := len(uncompressed)
 
-	for !neko.FullyRead() {
+	for !neko.fullyRead() {
 		token := readToken(neko)
 
-		literals := neko.ReadBytes(token.nrOfLiterals)
+		literals := neko.readBytes(token.nrOfLiterals)
 		uncompressed = append(uncompressed, literals...)
 
 		// maximum block length is 0x8000 bytes. The file is not complete yet
@@ -90,53 +84,53 @@ func uncompressNekoBlock(neko *NekoData, uncompressed []byte, completeCond Compl
 	return uncompressed, true
 }
 
-type Token struct {
+type token struct {
 	nrOfLiterals int
 	nrOfMatches  int
 	tokenByte    byte
 }
 
-func readToken(neko *NekoData) Token {
-	tokenByte := neko.ReadByte()
+func readToken(neko *nekoData) token {
+	tokenByte := neko.readByte()
 
 	litLength := int(tokenByte >> 4)
 	matLength := int((tokenByte & 0xF) + 4)
 
 	if litLength == 0xF {
-		extendedLitLength := neko.ReadByte()
+		extendedLitLength := neko.readByte()
 
 		litLength += int(extendedLitLength)
 		for extendedLitLength == 0xFF {
-			extendedLitLength = neko.ReadByte()
+			extendedLitLength = neko.readByte()
 			litLength += int(extendedLitLength)
 		}
 	}
 
-	return Token{
+	return token{
 		nrOfLiterals: litLength,
 		nrOfMatches:  matLength,
 		tokenByte:    tokenByte,
 	}
 }
 
-func readMatchOffset(neko *NekoData) int {
-	matchOffsetBytes := neko.ReadBytes(2)
+func readMatchOffset(neko *nekoData) int {
+	matchOffsetBytes := neko.readBytes(2)
 	matchOffset := (int(matchOffsetBytes[1]) << 8) | int(matchOffsetBytes[0])
 
 	return matchOffset
 }
 
-func readExtendedMatchLength(token Token, neko *NekoData) int {
+func readExtendedMatchLength(token token, neko *nekoData) int {
 	if token.nrOfMatches != 0xF+4 {
 		return 0
 	}
 
-	nextByte := neko.ReadByte()
+	nextByte := neko.readByte()
 
 	extendedMatLength := int(nextByte)
 
 	for nextByte == 0xFF {
-		nextByte = neko.ReadByte()
+		nextByte = neko.readByte()
 		extendedMatLength += int(nextByte)
 	}
 
