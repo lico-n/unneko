@@ -1,11 +1,11 @@
 # unneko
 
-An extractor for Revived Witch nekodata.
+An extractor for Revived Witch nekodata by Lico#6969
 
 
 ## Usage as binary 
 
-Download and run in terminal 
+Download from release page and run in terminal 
 
 ```
 $ ./unneko -o ./output inputfile.nekodata
