@@ -6,6 +6,7 @@ import (
 	"github.com/lico-n/unneko"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -17,7 +18,7 @@ func main() {
 	args := flag.Args()
 
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "unneko v1.14.0 by Lico#6969")
+		fmt.Fprintln(os.Stderr, "unneko v1.15.0 by Lico#6969")
 		fmt.Fprintln(os.Stderr, "Usage: unneko <flags> input-file")
 		flag.PrintDefaults()
 		os.Exit(-1)
@@ -57,17 +58,18 @@ func performExtraction(inputFilePath string, outputDir string) error {
 	wg := &sync.WaitGroup{}
 	wg.Add(numOfSaveWorker)
 	for i := 0; i < numOfSaveWorker; i++ {
-		go startFileSavingWorker(wg, outputDir, extractedChan)
+		go startFileSavingWorker(wg, inputFilePath, outputDir, extractedChan)
 	}
 
 	wg.Wait()
 	return nil
 }
 
-func startFileSavingWorker(wg *sync.WaitGroup, outputPath string, ch <-chan *unneko.ExtractedFile) {
+func startFileSavingWorker(wg *sync.WaitGroup, inputFile string, outputPath string, ch <-chan *unneko.ExtractedFile) {
 	defer wg.Done()
 	for file := range ch {
-		outputFilePath := filepath.Join(outputPath, file.Path())
+
+		outputFilePath := filepath.Join(outputPath, getFileNameWithoutExt(inputFile), file.Path())
 
 		outputDir := filepath.Dir(outputFilePath)
 		if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
@@ -80,4 +82,10 @@ func startFileSavingWorker(wg *sync.WaitGroup, outputPath string, ch <-chan *unn
 			continue
 		}
 	}
+}
+
+func getFileNameWithoutExt(inputFile string) string {
+	baseFile := filepath.Base(inputFile)
+	splitted := strings.Split(baseFile, ".")
+	return splitted[0]
 }
