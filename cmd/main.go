@@ -18,16 +18,24 @@ func main() {
 	args := flag.Args()
 
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "unneko v1.15.0 by Lico#6969")
+		fmt.Fprintln(os.Stderr, "unneko v1.16.0 by Lico#6969")
 		fmt.Fprintln(os.Stderr, "Usage: unneko <flags> input-file")
 		flag.PrintDefaults()
 		os.Exit(-1)
 	}
 
-	inputFile := args[0]
-	if err := performExtraction(inputFile, *outputDir); err != nil {
-		fmt.Printf("failed to extract nekodata: %v", err)
+	inputFiles, err := getInputFiles(args[0])
+	if err != nil {
+		fmt.Printf("unable to read input files: %v", err)
 		os.Exit(-1)
+	}
+
+	for _, v := range inputFiles {
+		fmt.Printf("extracting: %s\n", v)
+		if err := performExtraction(v, *outputDir); err != nil {
+			fmt.Printf("failed to extract nekodata: %v", err)
+			os.Exit(-1)
+		}
 	}
 }
 
@@ -88,4 +96,34 @@ func getFileNameWithoutExt(inputFile string) string {
 	baseFile := filepath.Base(inputFile)
 	splitted := strings.Split(baseFile, ".")
 	return splitted[0]
+}
+
+func getInputFiles(path string) ([]string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat input path: %v", err)
+	}
+	if !info.IsDir() {
+		return []string{path}, nil
+	}
+
+	var nekoFiles []string
+
+	dirFiles, err := os.ReadDir(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat input dir: %v", err)
+	}
+
+	for _, v := range dirFiles {
+		if v.IsDir() {
+			continue
+		}
+
+		if strings.HasSuffix(v.Name(), ".nekodata") {
+			nekoPath := filepath.Join(path, v.Name())
+			nekoFiles = append(nekoFiles, nekoPath)
+		}
+	}
+
+	return nekoFiles, nil
 }
