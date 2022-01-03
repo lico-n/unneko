@@ -19,7 +19,7 @@ In case the inputfile is a patch nekodata the file extension must be `.patch.nek
 
 ## Usage with windows GUI
 
-For those on Windows and unfamiliar with basic command line usage, you can download `unneko-win-x64.exe`.
+For those on Windows and unfamiliar with basic command line usage, you can download `unneko-win-x64.exe` on the release page https://github.com/lico-n/unneko/releases.
 Then simply drag and drop nekodata file or a directory containing nekodata files on the `unneko-win-x64.exe`, 
 the extracted files will appear in `output` directory.
 
