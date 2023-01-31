@@ -61,8 +61,8 @@ func (c *checksumCompleteCond) Complete(neko *nekoData, uncompressed []byte) boo
 	chSum := crc32.ChecksumIEEE(uncompressed)
 
 	for _, v := range c.maps {
-		if _, ok := v.checksums[chSum]; ok {
-			return true
+		if n, ok := v.checksums[chSum]; ok {
+			return n > 0
 		}
 	}
 
